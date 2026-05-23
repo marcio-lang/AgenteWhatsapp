@@ -1,0 +1,727 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fluxzap</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Remix Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/remixicon@3.5.0/fonts/remixicon.css" rel="stylesheet">
+</head>
+
+<body>
+
+    <aside class="sidebar">
+        <div class="logo-container">
+            <div class="logo">
+                <span class="logo-mark" aria-hidden="true">
+                    <svg viewBox="0 0 64 64" role="img" focusable="false">
+                        <defs>
+                            <linearGradient id="fluxzapMarkBg" x1="0" y1="0" x2="1" y2="1">
+                                <stop offset="0%" stop-color="#15D6FF" />
+                                <stop offset="55%" stop-color="#0B74D6" />
+                                <stop offset="100%" stop-color="#0B2D5B" />
+                            </linearGradient>
+                        </defs>
+                        <path
+                            d="M18 10h28c7.18 0 13 5.82 13 13v16c0 7.18-5.82 13-13 13H30l-11.2 7.47A2 2 0 0 1 16 67.3V52c-6.63-1-11-6.39-11-13V23c0-7.18 5.82-13 13-13Z"
+                            fill="url(#fluxzapMarkBg)" />
+                        <path
+                            d="M23 24c0-5 4-9 9-9h9c5 0 9 4 9 9v2h-6v-2c0-1.69-1.31-3-3-3h-9c-1.69 0-3 1.31-3 3 0 1.27.76 2.4 1.93 2.86l14.2 5.67A9.03 9.03 0 0 1 52 43c0 5-4 9-9 9h-9c-5 0-9-4-9-9v-2h6v2c0 1.69 1.31 3 3 3h9c1.69 0 3-1.31 3-3 0-1.27-.76-2.4-1.93-2.86l-14.2-5.67A9.03 9.03 0 0 1 23 24Z"
+                            fill="#FFFFFF" opacity="0.96" />
+                        <path d="M20.5 31.5c0-.83.67-1.5 1.5-1.5h9a1.5 1.5 0 0 1 0 3h-9c-.83 0-1.5-.67-1.5-1.5Z"
+                            fill="#FFFFFF" opacity="0.96" />
+                        <circle cx="44.5" cy="20.5" r="4.2" fill="#22C55E" stroke="#FFFFFF" stroke-width="2" />
+                        <circle cx="33.2" cy="32.2" r="4.2" fill="#22C55E" stroke="#FFFFFF" stroke-width="2" />
+                        <circle cx="44.5" cy="44.5" r="4.2" fill="#22C55E" stroke="#FFFFFF" stroke-width="2" />
+                    </svg>
+                </span>
+                <span class="logo-flux">Flux</span><span class="logo-zap">zap</span>
+            </div>
+        </div>
+
+        <nav>
+            <a href="#" class="nav-item active" data-section="atendimento">
+                <i class="ri-chat-voice-line"></i>
+                <span>Atendimento</span>
+            </a>
+            <a href="#" class="nav-item" data-section="agente">
+                <i class="ri-robot-2-line"></i>
+                <span>Agente (Fluxos)</span>
+            </a>
+            <a href="#" class="nav-item" data-section="contatos">
+                <i class="ri-contacts-book-line"></i>
+                <span>Contatos</span>
+            </a>
+            <a href="#" class="nav-item" data-section="files">
+                <i class="ri-folder-open-line"></i>
+                <span>Gerenciador de Arquivos</span>
+            </a>
+            <a href="#" class="nav-item" data-section="mensagens">
+                <i class="ri-mail-send-line"></i>
+
+                <span>Mensagens (Disparo)</span>
+            </a>
+            <a href="#" class="nav-item" data-section="dashboard">
+                <i class="ri-dashboard-line"></i>
+                <span>Dashboard</span>
+            </a>
+            <a href="#" class="nav-item" data-section="settings">
+                <i class="ri-settings-4-line"></i>
+                <span>Configurações</span>
+            </a>
+        </nav>
+
+        <div class="sidebar-footer">
+            <div class="instance-badge" id="instance-status-badge">
+                <div class="status-indicator offline"></div>
+                <span id="instance-display-name">Carregando...</span>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main-content">
+        <!-- Section: Atendimento (Agent Panel) -->
+        <div id="section-atendimento" class="content-section active">
+            <div class="agent-panel">
+                <!-- Column 1: Chat List -->
+                <div class="chat-list-column">
+                    <div class="column-header">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                            <h2>Conversas</h2>
+                            <div class="header-actions-secondary" style="gap: 12px; display: flex; align-items: center;">
+                                <button class="btn-icon" id="toggle-list-filters-btn" title="Filtros Operacionais" style="border: none; background: transparent; padding: 4px; width: auto; height: auto; font-size: 18px; color: var(--text-muted); cursor: pointer;"><i class="ri-filter-3-line"></i></button>
+                                <button class="btn-icon" title="Nova conversa" style="border: none; background: transparent; padding: 4px; width: auto; height: auto; font-size: 18px; color: var(--text-muted); cursor: pointer;"><i class="ri-chat-new-line"></i></button>
+                                <button class="btn-icon" title="Opções" style="border: none; background: transparent; padding: 4px; width: auto; height: auto; font-size: 18px; color: var(--text-muted); cursor: pointer;"><i class="ri-more-2-line"></i></button>
+                            </div>
+                        </div>
+                        <div class="filter-tabs">
+                            <button class="filter-tab active" data-filter="all">Tudo</button>
+                            <button class="filter-tab" data-filter="unread">Não lidas</button>
+                            <button class="filter-tab" data-filter="favorites">Favoritas <i class="ri-arrow-down-s-line" style="font-size: 14px; margin-left: 2px;"></i></button>
+                        </div>
+                    </div>
+                    <div class="chat-list-filters collapsed" id="chat-list-filters">
+                        <div class="operational-summary-bar" id="operational-summary-bar"></div>
+                        <div class="queue-filter-bar" id="queue-filter-bar"></div>
+                        <div class="stage-filter-bar" id="stage-filter-bar"></div>
+                        <div class="focus-filter-bar" id="focus-filter-bar"></div>
+                    </div>
+                    <div class="search-bar">
+                        <i class="ri-search-line"></i>
+                        <input type="text" id="chat-search" placeholder="Pesquisar ou começar uma nova conversa">
+                    </div>
+                    <div id="active-chats-list" class="chats-scroll">
+                        <div class="loading-state">Carregando conversas...</div>
+                    </div>
+                </div>
+
+                <!-- Column 2: Chat Area -->
+                <div class="chat-area-column">
+                    <div id="empty-chat-state" class="empty-state">
+                        <i class="ri-chat-smile-2-line"></i>
+                        <p>Selecione uma conversa para começar a atender.</p>
+                    </div>
+
+                    <div id="active-chat-area" class="active-chat-container" style="display: none;">
+                        <div class="chat-header">
+                            <div class="contact-info-mini">
+                                <div class="avatar">?</div>
+                                <div class="details">
+                                    <div class="title-row">
+                                        <span class="name" id="current-chat-name">Contato</span>
+                                        <span class="status-pill" id="current-chat-pill">Em atendimento</span>
+                                    </div>
+                                    <div class="meta-row">
+                                        <span class="status" id="current-chat-status">online</span>
+                                        <span class="dot-separator">•</span>
+                                        <span class="chat-header-meta" id="current-chat-meta">Sem atividade recente</span>
+                                    </div>
+                                </div>
+                            </div>
+                                                       <div class="header-actions">
+                                <div class="header-actions-primary">
+                                    <button class="btn-secondary btn-header-action" id="chat-assume-btn" title="Assumir Atendimento">
+                                        <i class="ri-user-star-line"></i>
+                                        <span>Assumir</span>
+                                    </button>
+                                    <button class="btn-secondary btn-header-action" id="chat-transfer-btn" title="Transferir Atendimento">
+                                        <i class="ri-share-forward-line"></i>
+                                        <span>Transferir</span>
+                                    </button>
+                                    <button class="btn-danger-outline btn-header-action" id="chat-close-btn" title="Encerrar Conversa">
+                                        <i class="ri-check-double-line"></i>
+                                        <span>Encerrar</span>
+                                    </button>
+                                </div>
+                                <div class="header-actions-secondary" style="gap: 12px; display: flex; align-items: center;">
+                                    <button class="btn-icon" title="Chamada de vídeo" style="border: none; background: transparent; padding: 4px; width: auto; height: auto; font-size: 18px; color: var(--text-muted); cursor: pointer;"><i class="ri-vidicon-line"></i></button>
+                                    <button class="btn-icon" title="Chamada de voz" style="border: none; background: transparent; padding: 4px; width: auto; height: auto; font-size: 18px; color: var(--text-muted); cursor: pointer;"><i class="ri-phone-line"></i></button>
+                                    <button class="btn-icon" title="Pesquisar" style="border: none; background: transparent; padding: 4px; width: auto; height: auto; font-size: 18px; color: var(--text-muted); cursor: pointer;"><i class="ri-search-line"></i></button>
+                                    <button class="btn-icon" title="Menu" style="border: none; background: transparent; padding: 4px; width: auto; height: auto; font-size: 18px; color: var(--text-muted); cursor: pointer;"><i class="ri-more-2-line"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="messages-container" class="messages-scroll"></div>
+                        <div class="chat-footer">
+                            <div class="composer-context">
+                                <div class="composer-meta" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                                    <div style="display: flex; align-items: center; gap: 12px;">
+                                        <span class="composer-priority-pill" id="composer-priority-pill">Em dia</span>
+                                        <span class="composer-context-label" id="composer-context-label">Contexto geral</span>
+                                    </div>
+                                    <button class="btn-icon" id="toggle-composer-assist-btn" title="Sugestões de Respostas (IA)" style="border: none; background: transparent; padding: 4px; width: auto; height: auto; font-size: 18px; color: var(--text-muted); cursor: pointer;">
+                                        <i class="ri-magic-line"></i>
+                                    </button>
+                                </div>
+                                <div class="composer-assist-panel collapsed" id="composer-assist-panel">
+                                    <div class="composer-playbook-groups" id="composer-playbook-groups"></div>
+                                    <div class="composer-quick-actions-section">
+                                        <span class="composer-section-label">Respostas recomendadas (IA)</span>
+                                        <div class="composer-quick-actions" id="composer-quick-actions"></div>
+                                    </div>
+                                </div>
+                                <div class="composer-notice" id="composer-notice">Selecione uma conversa para responder com contexto.</div>
+                            </div>
+                            <div class="input-actions-left">
+                                <button class="btn-icon"><i class="ri-attachment-2"></i></button>
+                            </div>
+                            <textarea id="message-input" placeholder="Digite uma mensagem..." rows="1"></textarea>
+                            <div class="input-actions-right">
+                                <button id="send-btn" class="send-button">
+                                    <i class="ri-send-plane-2-fill"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Column 3: Contact Details -->
+                <div class="contact-details-column">
+                    <div id="contact-info-panel" style="display: none;">
+                        <div class="panel-section profile-main">
+                            <div class="large-avatar" id="details-avatar">?</div>
+                            <h3 id="aside-contact-name">Contato</h3>
+                            <p id="aside-contact-jid" class="contact-jid"></p>
+                            <span class="aside-status-pill" id="aside-contact-pill">Contato ativo</span>
+                            <div class="contact-summary-grid">
+                                <div class="contact-summary-item">
+                                    <span class="summary-label">Número</span>
+                                    <span class="summary-value" id="details-phone">-</span>
+                                </div>
+                                <div class="contact-summary-item">
+                                    <span class="summary-label">Última interação</span>
+                                    <span class="summary-value" id="details-last-interaction">-</span>
+                                </div>
+                                <div class="contact-summary-item">
+                                    <span class="summary-label">Origem</span>
+                                    <span class="summary-value" id="details-origin">WhatsApp</span>
+                                </div>
+                                <div class="contact-summary-item">
+                                    <span class="summary-label">Responsável</span>
+                                    <span class="summary-value" id="details-owner">Não atribuído</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Painel Operacional Lateral (SLA, Funil, Microestados) -->
+                        <div class="panel-section sidebar-insights-panel">
+                            <div class="panel-section-title">
+                                <span>Controle Operacional</span>
+                            </div>
+                            <div class="chat-insights-bar" id="chat-insights-bar">
+                                <div class="chat-insight-card">
+                                    <span class="chat-insight-label">SLA</span>
+                                    <span class="chat-insight-value" id="chat-sla-value">Em dia</span>
+                                </div>
+                                <div class="chat-insight-card">
+                                    <span class="chat-insight-label">Resposta</span>
+                                    <span class="chat-insight-value" id="chat-response-value">Sem pendências</span>
+                                </div>
+                                <div class="chat-insight-card">
+                                    <span class="chat-insight-label">Mensagens</span>
+                                    <span class="chat-insight-value" id="chat-message-count">0 mensagens</span>
+                                </div>
+                                <div class="chat-insight-card">
+                                    <span class="chat-insight-label">Etiquetas</span>
+                                    <span class="chat-insight-value" id="chat-tag-count">0 tags</span>
+                                </div>
+                            </div>
+                            <div class="chat-stage-panel" id="chat-stage-panel">
+                                <div class="chat-stage-panel-header">
+                                    <span class="chat-stage-panel-label">Etapa do atendimento</span>
+                                    <span class="chat-stage-panel-value" id="chat-stage-current">Atendimento</span>
+                                </div>
+                                <div class="chat-stage-actions" id="chat-stage-actions"></div>
+                            </div>
+                            <div class="chat-microstates" id="chat-microstates"></div>
+                        </div>
+
+                        <!-- Painel Inteligência Artificial (Resumos, Ações recomendadas) -->
+                        <div class="panel-section sidebar-ai-panel">
+                            <div class="panel-section-title">
+                                <span>Inteligência Artificial (IA)</span>
+                            </div>
+                            <div class="chat-recent-summary" id="chat-recent-summary">
+                                <span class="chat-recent-summary-label">Resumo recente</span>
+                                <span class="chat-recent-summary-text" id="chat-recent-summary-text">Sem histórico recente.</span>
+                            </div>
+                            <div class="chat-operation-cards" id="chat-operation-cards">
+                                <div class="chat-operation-card">
+                                    <span class="chat-operation-label">Última ação</span>
+                                    <span class="chat-operation-value" id="chat-last-action">Sem ação registrada.</span>
+                                </div>
+                                <div class="chat-operation-card">
+                                    <span class="chat-operation-label">Próximo passo</span>
+                                    <span class="chat-operation-value" id="chat-next-step">Aguardando contexto da conversa.</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="panel-section">
+                            <div class="panel-section-title">
+                                <span>Notas pessoais</span>
+                            </div>
+                            <textarea id="contact-notes" placeholder="Adicione notas..."></textarea>
+                            <button id="save-notes-btn" class="btn-start panel-action-button">Salvar notas</button>
+                        </div>
+                        <div class="panel-section">
+                            <div class="panel-section-title">
+                                <span>Etiquetas</span>
+                            </div>
+                            <div id="contact-tags" class="tags-container"></div>
+                            <div class="add-tag">
+                                <input type="text" id="new-tag-input" placeholder="Nova tag...">
+                                <button id="add-tag-btn"><i class="ri-add-line"></i></button>
+                            </div>
+                        </div>
+                        <div class="panel-section">
+                            <button class="btn-danger" id="block-contact-btn">
+                                <i class="ri-forbid-line"></i> Bloquear Contato
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section: Agente (Flows) -->
+        <div id="section-agente" class="content-section">
+            <header>
+                <h1>Configuração do Agente</h1>
+            </header>
+            <div class="dashboard-grid">
+
+                <section class="section">
+                    <div class="section-title">
+                        <i class="ri-node-tree"></i>
+                        <span>Fluxo de Conversa (AutoResponder)</span>
+                    </div>
+                    <p style="font-size: 14px; color: var(--text-muted); margin-bottom: 20px;">
+                        Visualize e gerencie como o bot responde automaticamente aos clientes.
+                    </p>
+
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px;">
+                        <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; min-width: 320px; flex: 1;">
+                            <select id="agent-flow-select" class="custom-select">
+                                <option value="">Carregando fluxos...</option>
+                            </select>
+                            <button id="agent-flows-refresh" class="btn-secondary" style="white-space: nowrap;">
+                                <i class="ri-refresh-line"></i> Atualizar
+                            </button>
+                        </div>
+                        <button id="agent-flow-activate" class="btn-secondary">
+                            <i class="ri-check-line"></i> Ativar
+                        </button>
+                        <button id="agent-flow-create" class="btn-secondary">
+                            <i class="ri-add-line"></i> Criar fluxo
+                        </button>
+                        <button id="agent-flow-rename" class="btn-secondary">
+                            <i class="ri-edit-line"></i> Renomear
+                        </button>
+                        <button id="agent-flow-delete" class="btn-danger-outline">
+                            <i class="ri-delete-bin-line"></i> Excluir
+                        </button>
+                        <button id="agent-bootstrap-default" class="btn-secondary">
+                            <i class="ri-download-2-line"></i> Carregar fluxo atual
+                        </button>
+                    </div>
+
+                    <div id="agent-flow-status" style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;"></div>
+
+                    <div id="agent-rules-list" class="file-list" style="display: flex; flex-direction: column; gap: 12px;">
+                        <div class="loading-state">Carregando regras...</div>
+                    </div>
+
+                    <button id="agent-rule-add" class="btn-start" style="width: 100%; border-style: dashed; background: transparent; border-width: 2px; margin-top: 12px;">
+                        <i class="ri-add-line"></i>
+                        <span>Adicionar Regra</span>
+                    </button>
+                </section>
+
+                <section class="section">
+                    <div class="section-title">
+                        <i class="ri-settings-3-line"></i>
+                        <span>Configurações do Agente</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 12px; margin-top: 16px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span>Status do AutoResponder</span>
+                            <div
+                                style="width: 40px; height: 20px; background: var(--primary-orange); border-radius: 10px; position: relative; cursor: pointer;">
+                                <div
+                                    style="width: 16px; height: 16px; background: white; border-radius: 50%; position: absolute; right: 2px; top: 2px;">
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span>Loop Prevent (Anti-Spam)</span>
+                            <div
+                                style="width: 40px; height: 20px; background: var(--primary-orange); border-radius: 10px; position: relative; cursor: pointer;">
+                                <div
+                                    style="width: 16px; height: 16px; background: white; border-radius: 50%; position: absolute; right: 2px; top: 2px;">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </div>
+
+
+        <!-- Section: File Manager -->
+        <div id="section-files" class="content-section">
+            <header>
+                <h1>File Manager</h1>
+            </header>
+            <div class="dashboard-grid">
+                <section class="section">
+                    <div class="section-title">
+                        <i class="ri-folder-shared-line"></i>
+                        <span>Offer Files (ofertas/)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; flex-wrap: wrap;">
+                        <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
+                            <input type="checkbox" id="files-select-all">
+                            <span style="font-size: 12px; color: var(--text-muted);">Selecionar tudo</span>
+                        </label>
+                        <div style="display:flex; align-items:center; gap:10px;">
+                            <div id="files-selection-status" style="font-size: 12px; color: var(--text-muted);"></div>
+                            <button id="files-delete-selected" class="btn-danger-outline" style="white-space: nowrap;">
+                                <i class="ri-delete-bin-line"></i> Excluir selecionados
+                            </button>
+                        </div>
+                    </div>
+                    <div id="real-file-list" class="file-list"
+                        style="display: flex; flex-direction: column; gap: 12px;">
+                        <div class="loading-state">Carregando arquivos...</div>
+                    </div>
+                    <div style="margin-top: 16px;">
+                        <input type="file" id="file-upload-input" style="display: none;" multiple accept="image/*,.pdf">
+                        <button id="upload-btn-trigger" class="btn-start" style="width: 100%; justify-content: center;">
+                            <i class="ri-upload-2-line"></i>
+                            <span>Upload New File</span>
+                        </button>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- Section: Mensagens (Broadcast) -->
+        <div id="section-mensagens" class="content-section">
+            <header>
+                <h1>Disparo de Mensagens</h1>
+            </header>
+            <div class="dashboard-grid">
+
+                <section class="section" style="grid-column: span 1.5;">
+                    <div class="section-title">
+                        <i class="ri-group-line"></i>
+                        <span>Configurar Campanha</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 16px;">
+                        <div class="panel-section">
+                            <label>Destinatários (IDs ou Números)</label>
+                            <textarea id="broadcast-leads" placeholder="55619...&#10;55619...&#10;ID_GRUPO@g.us"
+                                rows="5"></textarea>
+                        </div>
+
+                        <div class="panel-section">
+                            <label>Grupo de Contatos (opcional)</label>
+                            <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px;">
+                                <select id="broadcast-group-select" class="custom-select">
+                                    <option value="">Carregando grupos...</option>
+                                </select>
+                                <button id="broadcast-group-refresh" class="btn-secondary" style="white-space: nowrap;">
+                                    <i class="ri-refresh-line"></i> Atualizar
+                                </button>
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+                                <button id="broadcast-group-load" class="btn-secondary" style="justify-content: center;">
+                                    <i class="ri-download-2-line"></i> Carregar no campo
+                                </button>
+                                <button id="broadcast-group-save" class="btn-secondary" style="justify-content: center;">
+                                    <i class="ri-save-3-line"></i> Salvar campo como grupo
+                                </button>
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px;">
+                                <input type="file" id="broadcast-import-csv" style="display:none;" accept=".csv,text/csv">
+                                <button id="broadcast-import-csv-btn" class="btn-secondary"
+                                    style="justify-content: center;">
+                                    <i class="ri-file-upload-line"></i> Importar planilha (CSV)
+                                </button>
+                                <button id="broadcast-group-delete" class="btn-danger-outline"
+                                    style="justify-content: center;">
+                                    <i class="ri-delete-bin-line"></i> Excluir grupo
+                                </button>
+                            </div>
+                            <div id="broadcast-group-info"
+                                style="margin-top: 8px; font-size: 12px; color: var(--text-muted);"></div>
+                        </div>
+
+                        <div class="panel-section">
+                            <label>Tipo de Mensagem</label>
+                            <div style="display: flex; gap: 10px; margin-bottom: 8px;">
+                                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                                    <input type="radio" name="broadcast-type" value="text" checked> Texto
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                                    <input type="radio" name="broadcast-type" value="file"> Arquivo (Oferta)
+                                </label>
+                            </div>
+                        </div>
+
+                        <div id="broadcast-text-area" class="panel-section">
+                            <label>Mensagem</label>
+                            <textarea id="broadcast-message" placeholder="Sua mensagem aqui..." rows="4"></textarea>
+                        </div>
+
+                        <div id="broadcast-file-area" class="panel-section" style="display: none;">
+                            <label>Arquivo</label>
+                            <div style="display: flex; gap: 10px; margin-bottom: 8px;">
+                                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                                    <input type="radio" name="broadcast-file-source" value="manager" checked> Do
+                                    gerenciador
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 5px; cursor: pointer;">
+                                    <input type="radio" name="broadcast-file-source" value="local"> Arquivo local
+                                </label>
+                            </div>
+
+                            <div id="broadcast-file-source-manager">
+                                <select id="broadcast-file-select" class="custom-select">
+                                    <option value="">Carregando arquivos...</option>
+                                </select>
+                            </div>
+
+                            <div id="broadcast-file-source-local" style="display: none; margin-top: 10px;">
+                                <input type="file" id="broadcast-local-file" style="display:none;" accept="image/*,.pdf">
+                                <button id="broadcast-local-file-btn" class="btn-start"
+                                    style="width: 100%; justify-content: center;">
+                                    <i class="ri-upload-2-line"></i>
+                                    <span>Selecionar arquivo</span>
+                                </button>
+                                <div id="broadcast-local-file-name"
+                                    style="margin-top: 8px; font-size: 12px; color: var(--text-muted);"></div>
+                            </div>
+
+                            <div class="panel-section" style="margin-top: 12px;">
+                                <label>Legenda (opcional)</label>
+                                <textarea id="broadcast-file-caption" placeholder="Ex: Segue a oferta do dia..."
+                                    rows="3"></textarea>
+                            </div>
+                        </div>
+
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                            <div class="panel-section">
+                                <label>Delay Min (s)</label>
+                                <input type="number" id="broadcast-delay-min" value="5">
+                            </div>
+                            <div class="panel-section">
+                                <label>Delay Max (s)</label>
+                                <input type="number" id="broadcast-delay-max" value="15">
+                            </div>
+                        </div>
+
+                        <button id="start-broadcast-btn" class="btn-start"
+                            style="width: 100%; justify-content: center; height: 50px; font-size: 16px;">
+                            <i class="ri-rocket-2-line"></i>
+                            <span>LANÇAR CAMPANHA</span>
+                        </button>
+                    </div>
+                </section>
+
+                <section class="section">
+                    <div class="section-title">
+                        <i class="ri-line-chart-line"></i>
+                        <span>Status do Envio</span>
+                    </div>
+                    <div id="broadcast-status-panel" style="margin-top: 20px;">
+                        <div class="loading-state">Nenhuma campanha ativa.</div>
+                    </div>
+                </section>
+
+            </div>
+        </div>
+
+        <!-- Section: Dashboard -->
+        <div id="section-dashboard" class="content-section">
+            <header>
+                <h1>Dashboard</h1>
+            </header>
+            <div class="dashboard-container">
+                <!-- Instance Identity Card -->
+                <div class="instance-info-card">
+                    <div class="instance-primary">
+                        <div class="instance-avatar-large" id="dash-instance-avatar">?</div>
+                        <div class="instance-text">
+                            <h2 id="dash-instance-name">Nome da Instância</h2>
+                            <p id="dash-instance-jid">carregando jid...</p>
+                            <div class="instance-status-pill" id="dash-instance-status">
+                                <div class="status-indicator"></div>
+                                <span>Desconectado</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="instance-actions">
+                        <button class="btn-secondary" id="dash-restart-btn">
+                            <i class="ri-restart-line"></i> REINICIAR
+                        </button>
+                        <button class="btn-danger-outline" id="dash-logout-btn">
+                            <i class="ri-logout-box-line"></i> DESCONECTAR
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Stats Grid -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon"><i class="ri-contacts-line"></i></div>
+                        <div class="stat-value" id="stat-contacts">0</div>
+                        <div class="stat-label">Contatos</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon"><i class="ri-chat-3-line"></i></div>
+                        <div class="stat-value" id="stat-chats">0</div>
+                        <div class="stat-label">Conversas</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon"><i class="ri-message-2-line"></i></div>
+                        <div class="stat-value" id="stat-messages">0</div>
+                        <div class="stat-label">Mensagens</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Section: Settings -->
+        <div id="section-settings" class="content-section">
+            <header>
+                <h1>Configurações</h1>
+            </header>
+            <div class="dashboard-grid">
+                <!-- API Configuration -->
+                <section class="section">
+                    <div class="section-title">
+                        <i class="ri-key-2-line"></i>
+                        <span>Configuração da Evolution API</span>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 16px; margin-top: 16px;">
+                        <div class="panel-section">
+                            <label>API URL</label>
+                            <input type="text" id="setting-api-url" placeholder="https://api.sua-instancia.com"
+                                value="">
+                        </div>
+                        <div class="panel-section">
+                            <label>Global Token</label>
+                            <input type="password" id="setting-api-token" placeholder="Seu token global..." value="">
+                        </div>
+                        <div class="panel-section">
+                            <label>Nome da Instância</label>
+                            <input type="text" id="setting-instance-name" placeholder="Ex: agendazap" value="">
+                        </div>
+                        <button class="btn-start" style="width: 100%;">Salvar Configurações</button>
+                    </div>
+                </section>
+
+                <!-- Appearance -->
+                <section class="section">
+                    <div class="section-title">
+                        <i class="ri-palette-line"></i>
+                        <span>Aparência</span>
+                    </div>
+                    <div style="display: flex; gap: 12px; margin-top: 16px;">
+                        <button id="theme-light-btn" class="filter-tab active">Claro (Fluxzap)</button>
+                        <button id="theme-dark-btn" class="filter-tab">Escuro (Premium)</button>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+        <!-- Section: Contatos (Contacts Management) -->
+        <div id="section-contatos" class="content-section">
+            <header>
+                <h1>Gerenciamento de Contatos</h1>
+            </header>
+            <div class="dashboard-grid">
+                <section class="section" style="grid-column: span 2;">
+                    <div class="section-title">
+                        <i class="ri-contacts-line"></i>
+                        <span>Lista de Clientes</span>
+                    </div>
+                    <div style="display: flex; gap: 12px; margin-top: 12px; align-items: center;">
+                        <button id="contacts-sync-btn" class="btn-secondary">
+                            <i class="ri-refresh-line"></i> Sincronizar contatos (WhatsApp)
+                        </button>
+                        <div id="contacts-sync-status" style="font-size: 12px; color: var(--text-muted);"></div>
+                    </div>
+                    <div style="display: flex; gap: 12px; margin-top: 12px; align-items: center; flex-wrap: wrap;">
+                        <div style="display: grid; grid-template-columns: 1fr auto; gap: 10px; min-width: 320px; flex: 1;">
+                            <select id="contacts-group-select" class="custom-select">
+                                <option value="">Carregando grupos...</option>
+                            </select>
+                            <button id="contacts-group-refresh" class="btn-secondary" style="white-space: nowrap;">
+                                <i class="ri-refresh-line"></i> Atualizar
+                            </button>
+                        </div>
+                        <button id="contacts-group-create" class="btn-secondary">
+                            <i class="ri-folder-add-line"></i> Criar grupo
+                        </button>
+                        <button id="contacts-group-add-selected" class="btn-secondary">
+                            <i class="ri-user-add-line"></i> Adicionar selecionados
+                        </button>
+                        <button id="contacts-group-rename" class="btn-secondary">
+                            <i class="ri-edit-line"></i> Renomear grupo
+                        </button>
+                        <button id="contacts-group-delete" class="btn-danger-outline">
+                            <i class="ri-delete-bin-line"></i> Excluir grupo
+                        </button>
+                        <button id="contacts-clear-selection" class="btn-secondary">
+                            <i class="ri-close-circle-line"></i> Limpar seleção
+                        </button>
+                        <div id="contacts-selection-status" style="font-size: 12px; color: var(--text-muted);"></div>
+                    </div>
+                    <div style="margin-top: 12px;">
+                        <div id="contacts-group-info" style="font-size: 12px; color: var(--text-muted);"></div>
+                        <div id="contacts-group-members" class="file-list" style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;"></div>
+                    </div>
+                    <div class="search-bar"
+                        style="margin-top: 16px; margin-bottom: 16px; background: rgba(255,255,255,0.5);">
+                        <i class="ri-search-line"></i>
+                        <input type="text" id="contacts-search" placeholder="Buscar por nome, número ou tags...">
+                    </div>
+                    <div id="all-contacts-list" class="contacts-grid-panel">
+                        <div class="loading-state">Carregando contatos...</div>
+                    </div>
+                </section>
+            </div>
+        </div>
+
+    </main>
+
+    <script src="app.js"></script>
+</body>
+
+</html>

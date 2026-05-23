@@ -1,0 +1,8 @@
+flask
+requests
+python-dotenv
+tenacity
+prometheus-client
+rq
+redis
+psycopg2-binary

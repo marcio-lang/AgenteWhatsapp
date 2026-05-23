@@ -1,0 +1,38 @@
+services:
+  # Serviço 1: Servidor Web e Webhook (Flask)
+  agente-web:
+    build: .
+    container_name: agente-whatsapp-web
+    command: python execution/webhook_server.py
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      # Mapeia a pasta de ofertas local para a pasta do container (persistência de mídia)
+      - ./ofertas:/app/ofertas
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Serviço 2: Worker de Fila (Redis Queue - RQ)
+  agente-worker:
+    build: .
+    container_name: agente-whatsapp-worker
+    command: python execution/worker.py
+    env_file:
+      - .env
+    volumes:
+      # Compartilha a mesma pasta de ofertas para que o worker tenha acesso aos arquivos enviados
+      - ./ofertas:/app/ofertas
+    restart: unless-stopped
+    depends_on:
+      - agente-web
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

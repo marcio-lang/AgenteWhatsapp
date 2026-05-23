@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+	<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<link rel="stylesheet" href="index.css">
+</head>
+
+<body>
+    <div>
+	    <nav id="menu-h">
+        <ul>
+            <li><a href="index.html">Disparo Texto e Mídia</a></li>
+            <li><a href="index2.html">Adicionar Usuário</a></li>
+			<li><a href="index3.html">Remover Usuário</a></li>
+			<li><a href="index4.html">Adicionar Admin</a></li>
+			<li><a href="index5.html">Remover Admin</a></li>
+            <li><a target="_blank" href="https://comunidadezdg.com.br/"><img src="https://comunidadezdg.com.br/wp-content/uploads/elementor/thumbs/icone-p7nqaeuwl6ck4tz33sz0asflw2opfsqwutv8l3hfk0.png" style="height:20px;"><br></a></li>
+        </ul>
+    </nav>
+	<br>
+	<h1><b>GESTÃO DE GRUPOS</b></h1>
+	<h2>Disparo de texto, mídias por URL ou mídias locais</h2>
+	<br><hr><br>
+		<form action="index.php" method="post">
+			GRUPOS => Insira a lista com o ID dos grupos e senders conforme exemplo abaixo<br> <textarea name="leads" cols="40" rows="5" placeholder="15687544255&#10;65987542589&#10;54897632598" required></textarea><br /><br />
+			REST API => Insira a URL do Serviço:<br> <input required placeholder="http://localhost:8000/" style="width:50%" type="text" name="url" /><br /><br />
+			</br>
+			<input type="checkbox" name="txt" value="txt" id="txt" class="txt"> Marque o checkox para enviar textos</br>
+			<div id="texto" class="texto">
+			SAUDAÇÃO => Insira varáveis para saudação separadas por ;<br> <input placeholder="Oi, tudo bem?;Olá como vai você?;Falaaa, tudo certo?" style="width:50%" type="text" name="saudacao" /><br /><br />
+			MENSAGEM => Insira a sua mensagem<br> <textarea name="txt" cols="40" rows="5"></textarea><br /><br />
+			DESPEDIDA => Insira varáveis para despedida separadas por ;<br> <input placeholder="Até mais!;Nos vemos por aí!;Abraços!" style="width:50%" type="text" name="despedida" /><br /><br />
+			</div>
+			</br>
+			<input type="checkbox" name="img" value="img" id="img" class="img"> Marque o checkox para enviar arquivos via URL (tamanho max 16MB)</br>
+			<div id="imagem" class="imagem">
+			URL DO ARQUIVO:<br> <input placeholder="https://zapdasgalaxias.com.br/wp-content/uploads/2020/11/mock2.png" style="width:50%" type="text" name="urlFile" /><br /><br />
+			MENSAGEM => Insira a sua mensagem<br> <textarea name="titulo" cols="40" rows="5"></textarea><br /><br />
+			</div>
+			</br>
+			<input type="checkbox" name="img2" value="img2" id="img2" class="img2"> Marque o checkox para enviar arquivos LOCAIS (tamanho max 16MB)</br>
+			<div id="imagem2" class="imagem2">
+			CAMINHO DO ARQUIVO:<br> <input placeholder="teste.jpeg" style="width:50%" type="text" name="pathFile" /><br /><br />
+			MENSAGEM => Insira a sua mensagem<br> <textarea name="titulo2" cols="40" rows="5"></textarea><br /><br />
+			</div>
+			</br></br>
+			Setar o tempo aleatório em segundos <br> Min: <input required placeholder="2" style="width:5%" type="text" name="min" />   Max: <input required placeholder="31" style="width:5%" type="text" name="max" /><br /><br />
+			<input class="btn" type="submit" name="submit" value="LANÇAR!" />
+		</form>
+		<br><hr><br>
+		<p>Desenvolvido por Pedrinho da NASA - Comunidade ZDG</p><br>
+    </div>
+</body>
+</html>
+
+
+
+

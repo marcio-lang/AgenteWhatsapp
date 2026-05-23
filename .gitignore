@@ -1,0 +1,42 @@
+# Ambiente Virtual (Python)
+.venv/
+venv_313/
+venv/
+ENV/
+env/
+
+# Credenciais e Arquivos Sensíveis (MUITO IMPORTANTE)
+.env
+credentials.json
+token.json
+*.pem
+*.key
+
+# Logs e Diagnósticos
+*.log
+server.log
+diag_output.txt
+proc_list.txt
+proc_list_v2.txt
+last_webhook.json
+
+# Cache do Python e Compilados
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Banco de Dados Local
+*.db
+*.sqlite3
+storage.db
+
+# Arquivos do Sistema Operacional
+.DS_Store
+Thumbs.db
+
+# Pastas Temporárias da Aplicação
+.tmp/
+temp/
+tmp/
