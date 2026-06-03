@@ -3027,22 +3027,10 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
-        if (workspaceEntry?.stage) microstates.push(`Etapa manual: ${workspaceEntry.stage}`);
-        if (workspaceEntry?.owner) microstates.push(workspaceEntry.status === 'transferred' ? `Destino: ${workspaceEntry.owner}` : `Responsável: ${workspaceEntry.owner}`);
-        if (Number(chat.unread_count || 0) > 0) microstates.push(`${chat.unread_count} não lida${Number(chat.unread_count) === 1 ? '' : 's'}`);
-        if (metrics.lastIncoming) microstates.push(`Último cliente ${formatCompactElapsed(metrics.lastIncoming.timestamp)}`);
-        if (metrics.lastOutgoing) microstates.push(`Último agente ${formatCompactElapsed(metrics.lastOutgoing.timestamp)}`);
-        if (metrics.lastMessage?.type) microstates.push(`Canal ${getMessageTypeLabel(metrics.lastMessage.type)}`);
-
         if (chatMicrostates) {
             chatMicrostates.innerHTML = '';
-            microstates.slice(0, 5).forEach(label => {
-                const chip = document.createElement('span');
-                chip.className = 'chat-microstate-chip';
-                chip.textContent = label;
-                chatMicrostates.appendChild(chip);
-            });
         }
+
 
         renderComposerContext(chat, currentMessages);
     }
