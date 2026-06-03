@@ -38,6 +38,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const messagesContainer = document.getElementById('messages-container');
     const messageInput = document.getElementById('message-input');
     const sendBtn = document.getElementById('send-btn');
+    const chatAttachBtn = document.getElementById('chat-attach-btn');
+    const chatFileInput = document.getElementById('chat-file-input');
     const contactInfoPanel = document.getElementById('contact-info-panel');
     const chatSearchInput = document.getElementById('chat-search');
     const filterTabs = document.querySelectorAll('.chat-list-column .filter-tab[data-filter]');
@@ -58,6 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Header/Aside Info
     const headerChatName = document.getElementById('current-chat-name');
+    const headerChatAvatar = document.getElementById('current-chat-avatar');
     const headerChatPill = document.getElementById('current-chat-pill');
     const headerChatMeta = document.getElementById('current-chat-meta');
     const headerChatStatus = document.getElementById('current-chat-status');
@@ -1002,9 +1005,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const letter = name[0].toUpperCase();
             const checked = selectedContactJids.has(jid);
 
+            const avatarHtml = contact.profile_pic 
+                ? `<img src="${contact.profile_pic}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`
+                : letter;
+
             card.innerHTML = `
                 <div class="contact-card-primary">
-                    <div class="contact-card-avatar">${letter}</div>
+                    <div class="contact-card-avatar">${avatarHtml}</div>
                     <div class="contact-card-info">
                         <div class="contact-card-name">${name}</div>
                         <div class="contact-card-phone">${phone}</div>
@@ -1998,6 +2005,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const focusToneClass = operationalFocus?.tone ? `focus-${operationalFocus.tone}` : '';
             const focusBadge = operationalFocus ? `<span class="chat-focus-badge ${operationalFocus.tone}">${escapeHtml(operationalFocus.label)}</span>` : '';
             item.className = `chat-item ${activeChatJid === chat.jid ? 'active' : ''} ${visualState.itemClasses} ${stageVisual.itemClass} ${focusToneClass}`.trim();
+            item.dataset.jid = chat.jid;
             const unreadBadge = chat.unread_count > 0 ? `<span class="unread-badge">${chat.unread_count}</span>` : '';
             const priorityDot = visualState.priorityClass ? `<span class="chat-priority-dot ${visualState.priorityClass}"></span>` : '';
             const waitTime = visualState.waitLabel ? `<span class="chat-wait-time">${escapeHtml(visualState.waitLabel)}</span>` : '';
@@ -2007,8 +2015,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const chatName = escapeHtml(chat.push_name || 'Desconhecido');
             const chatPreview = escapeHtml(chat.last_msg || 'Sem mensagens');
 
+            const avatarContent = chat.profile_pic 
+                ? `<img src="${chat.profile_pic}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`
+                : (chat.push_name ? chat.push_name[0].toUpperCase() : '?');
+
             item.innerHTML = `
-        <div class="avatar">${chat.push_name ? chat.push_name[0].toUpperCase() : '?'}</div>
+        <div class="avatar">${avatarContent}</div>
         <div class="content">
           <div class="top">
             <span class="name">${chatName} ${unreadBadge}</span>
@@ -2217,8 +2229,16 @@ document.addEventListener('DOMContentLoaded', () => {
         contactNotes.value = chat.notes || '';
         renderConversationInsights(chat, messages);
 
-        // Load Avatar dynamically from API
-        detailsAvatar.innerHTML = '<i class="ri-loader-4-line ri-spin"></i>';
+        // Set initial Avatar placeholder or cached image
+        if (chat.profile_pic) {
+            const cachedImgHtml = `<img src="${chat.profile_pic}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+            detailsAvatar.innerHTML = cachedImgHtml;
+            if (headerChatAvatar) headerChatAvatar.innerHTML = cachedImgHtml;
+        } else {
+            const letter = chat.push_name ? chat.push_name[0].toUpperCase() : '?';
+            detailsAvatar.innerHTML = '<i class="ri-loader-4-line ri-spin"></i>';
+            if (headerChatAvatar) headerChatAvatar.textContent = letter;
+        }
         fetchContactAvatar(chat.jid);
 
         renderTags(chat);
@@ -2248,13 +2268,29 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             const data = await resp.json();
             if (data && data.profilePictureUrl) {
-                detailsAvatar.innerHTML = `<img src="${data.profilePictureUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+                const imgHtml = `<img src="${data.profilePictureUrl}" style="width:100%; height:100%; border-radius:50%; object-fit:cover;">`;
+                detailsAvatar.innerHTML = imgHtml;
+                if (headerChatAvatar) headerChatAvatar.innerHTML = imgHtml;
+                
+                // Update local chat object cache and list item
+                const targetChat = chats.find(c => c.jid === jid);
+                if (targetChat) {
+                    targetChat.profile_pic = data.profilePictureUrl;
+                }
+                const chatEl = document.querySelector(`.chat-item[data-jid="${jid}"]`);
+                if (chatEl) {
+                    const av = chatEl.querySelector('.avatar');
+                    if (av) av.innerHTML = imgHtml;
+                }
             } else {
                 const name = headerChatName.textContent;
-                detailsAvatar.innerHTML = name ? name[0].toUpperCase() : '?';
+                const letter = name ? name[0].toUpperCase() : '?';
+                detailsAvatar.innerHTML = letter;
+                if (headerChatAvatar) headerChatAvatar.textContent = letter;
             }
         } catch (e) {
             detailsAvatar.innerHTML = '?';
+            if (headerChatAvatar) headerChatAvatar.textContent = '?';
         }
     }
 
@@ -3245,6 +3281,56 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     sendBtn.onclick = sendMessage; // Keep this for button click
+
+    // Attachment handlers
+    if (chatAttachBtn && chatFileInput) {
+        chatAttachBtn.onclick = () => {
+            if (!activeChatJid) {
+                alert('Selecione uma conversa ativa primeiro.');
+                return;
+            }
+            chatFileInput.click();
+        };
+
+        chatFileInput.onchange = async () => {
+            const files = Array.from(chatFileInput.files);
+            if (files.length === 0) return;
+
+            chatAttachBtn.disabled = true;
+            const originalIconClass = chatAttachBtn.querySelector('i').className;
+            chatAttachBtn.querySelector('i').className = 'ri-loader-4-line ri-spin';
+
+            try {
+                const uploadedNames = await uploadFiles(files);
+                if (uploadedNames && uploadedNames.length > 0) {
+                    for (const filename of uploadedNames) {
+                        const resp = await fetch('/api/send/media', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                jid: activeChatJid,
+                                filename: filename,
+                                caption: ''
+                            })
+                        });
+                        if (!resp.ok) {
+                            const data = await resp.json().catch(() => ({}));
+                            alert(`Falha ao enviar arquivo: ${filename}. ${data && data.response ? JSON.stringify(data.response) : ''}`);
+                        }
+                    }
+                    fetchMessages(activeChatJid);
+                }
+            } catch (err) {
+                console.error('Error sending file:', err);
+                alert('Erro ao enviar o arquivo.');
+            } finally {
+                chatAttachBtn.disabled = false;
+                chatAttachBtn.querySelector('i').className = originalIconClass;
+                chatFileInput.value = '';
+            }
+        };
+    }
+
     if (saveNotesBtn) {
         saveNotesBtn.onclick = () => saveContactData({ notes: contactNotes?.value });
     }

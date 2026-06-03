@@ -127,7 +127,7 @@
                     <div id="active-chat-area" class="active-chat-container" style="display: none;">
                         <div class="chat-header">
                             <div class="contact-info-mini">
-                                <div class="avatar">?</div>
+                                <div class="avatar" id="current-chat-avatar">?</div>
                                 <div class="details">
                                     <div class="title-row">
                                         <span class="name" id="current-chat-name">Contato</span>
@@ -185,7 +185,8 @@
                                 <div class="composer-notice" id="composer-notice">Selecione uma conversa para responder com contexto.</div>
                             </div>
                             <div class="input-actions-left">
-                                <button class="btn-icon"><i class="ri-attachment-2"></i></button>
+                                <button type="button" class="btn-icon" id="chat-attach-btn" title="Anexar arquivo"><i class="ri-attachment-2"></i></button>
+                                <input type="file" id="chat-file-input" style="display: none;" accept="image/*,application/pdf" multiple>
                             </div>
                             <textarea id="message-input" placeholder="Digite uma mensagem..." rows="1"></textarea>
                             <div class="input-actions-right">

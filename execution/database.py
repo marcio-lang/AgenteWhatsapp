@@ -131,7 +131,7 @@ def mark_as_read(jid):
     conn.commit()
     conn.close()
 
-def update_contact(jid, push_name=None, notes=None, tags=None, is_favorite=None, is_archived=None):
+def update_contact(jid, push_name=None, notes=None, tags=None, is_favorite=None, is_archived=None, profile_pic=None):
     conn = get_db()
     cursor = conn.cursor()
     
@@ -152,6 +152,8 @@ def update_contact(jid, push_name=None, notes=None, tags=None, is_favorite=None,
         cursor.execute("UPDATE contacts SET is_favorite = ? WHERE jid = ?", (1 if is_favorite else 0, jid))
     if is_archived is not None:
         cursor.execute("UPDATE contacts SET is_archived = ? WHERE jid = ?", (1 if is_archived else 0, jid))
+    if profile_pic is not None:
+        cursor.execute("UPDATE contacts SET profile_pic = ? WHERE jid = ?", (profile_pic, jid))
         
     conn.commit()
     conn.close()

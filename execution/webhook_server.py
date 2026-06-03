@@ -959,6 +959,8 @@ def api_get_avatar():
         return jsonify({"error": "Missing jid"}), 400
     
     resp = client.fetch_profile_picture(jid)
+    if resp and isinstance(resp, dict) and resp.get("profilePictureUrl"):
+        update_contact(jid, profile_pic=resp.get("profilePictureUrl"))
     return jsonify(resp), 200
 
 @app.route('/api/instance/presence', methods=['POST'])

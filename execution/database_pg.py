@@ -171,7 +171,7 @@ def mark_as_read(jid):
         cursor.close()
         conn.close()
 
-def update_contact(jid, push_name=None, notes=None, tags=None, is_favorite=None, is_archived=None):
+def update_contact(jid, push_name=None, notes=None, tags=None, is_favorite=None, is_archived=None, profile_pic=None):
     conn = get_db_connection()
     if not conn: return
     cursor = conn.cursor()
@@ -193,6 +193,8 @@ def update_contact(jid, push_name=None, notes=None, tags=None, is_favorite=None,
             cursor.execute("UPDATE contacts SET is_favorite = %s WHERE jid = %s", (bool(is_favorite), jid))
         if is_archived is not None:
             cursor.execute("UPDATE contacts SET is_archived = %s WHERE jid = %s", (bool(is_archived), jid))
+        if profile_pic is not None:
+            cursor.execute("UPDATE contacts SET profile_pic = %s WHERE jid = %s", (profile_pic, jid))
             
         conn.commit()
     except Exception as e:
