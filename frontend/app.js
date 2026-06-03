@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Customer Service Dashboard Initialized');
+    document.body.classList.add('atendimento-view');
 
     // --- STATE ---
     let chats = [];
@@ -235,10 +236,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const targetSection = document.getElementById(`section-${targetSectionId}`);
             if (targetSection) targetSection.classList.add('active');
 
-            // Start/Stop Polling based on section
+            // Start/Stop Polling and class views based on section
             if (targetSectionId === 'atendimento') {
+                document.body.classList.add('atendimento-view');
                 startPolling();
             } else {
+                document.body.classList.remove('atendimento-view');
                 stopPolling();
             }
 
@@ -3242,7 +3245,27 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     sendBtn.onclick = sendMessage; // Keep this for button click
-    saveNotesBtn.onclick = () => saveContactData({ notes: contactNotes.value });
+    if (saveNotesBtn) {
+        saveNotesBtn.onclick = () => saveContactData({ notes: contactNotes?.value });
+    }
+
+    // Toggle details open when clicking chat header info
+    const contactInfoMini = document.querySelector('.contact-info-mini');
+    const agentPanel = document.querySelector('.agent-panel');
+    if (contactInfoMini && agentPanel) {
+        contactInfoMini.style.cursor = 'pointer';
+        contactInfoMini.addEventListener('click', () => {
+            agentPanel.classList.toggle('details-open');
+        });
+    }
+
+    // Action buttons inside details panel proxying header actions
+    const asideAssumeBtn = document.getElementById('aside-assume-btn');
+    const asideTransferBtn = document.getElementById('aside-transfer-btn');
+    const asideCloseBtn = document.getElementById('aside-close-btn');
+    if (asideAssumeBtn) asideAssumeBtn.onclick = () => chatAssumeBtn?.click();
+    if (asideTransferBtn) asideTransferBtn.onclick = () => chatTransferBtn?.click();
+    if (asideCloseBtn) asideCloseBtn.onclick = () => chatCloseBtn?.click();
 
     addTagBtn.onclick = () => {
         const tag = newTagInput.value.trim();

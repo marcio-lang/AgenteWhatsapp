@@ -2307,3 +2307,202 @@ h1 {
   border-bottom: none;
   padding: 8px 0;
 }
+
+/* ==========================================================================
+   ESTILO CLEAN (INSPIRADO NO WHATSAPP WEB)
+   ========================================================================== */
+
+/* Quando a seção Atendimento está ativa, removemos espaçamentos externos */
+body.atendimento-view .main-content {
+  padding: 0;
+  max-height: 100vh;
+  overflow: hidden;
+}
+
+body.atendimento-view .agent-panel {
+  height: 100vh;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* Sidebar colapsável de forma suave na visualização de Atendimento */
+body.atendimento-view .sidebar {
+  width: 64px;
+  padding: 16px 8px;
+  align-items: center;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s ease, box-shadow 0.3s ease;
+  z-index: 100;
+}
+
+body.atendimento-view .sidebar:hover {
+  width: 260px;
+  padding: 28px 16px;
+  align-items: stretch;
+  box-shadow: var(--shadow-lg);
+}
+
+body.atendimento-view .sidebar .logo-flux,
+body.atendimento-view .sidebar .logo-zap,
+body.atendimento-view .sidebar .nav-item span,
+body.atendimento-view .sidebar .instance-badge span {
+  opacity: 0;
+  width: 0;
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: opacity 0.15s ease, width 0.15s ease;
+}
+
+body.atendimento-view .sidebar:hover .logo-flux,
+body.atendimento-view .sidebar:hover .logo-zap {
+  opacity: 1;
+  width: auto;
+  display: inline;
+}
+
+body.atendimento-view .sidebar:hover .nav-item span,
+body.atendimento-view .sidebar:hover .instance-badge span {
+  opacity: 1;
+  width: auto;
+  display: inline-block;
+}
+
+body.atendimento-view .sidebar .logo-container {
+  padding: 0 0 24px;
+  width: 100%;
+}
+
+body.atendimento-view .sidebar .logo {
+  justify-content: center;
+}
+
+body.atendimento-view .sidebar:hover .logo {
+  justify-content: flex-start;
+}
+
+body.atendimento-view .sidebar .nav-item {
+  width: 44px;
+  height: 44px;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.2s ease;
+}
+
+body.atendimento-view .sidebar:hover .nav-item {
+  width: 100%;
+  justify-content: flex-start;
+  padding: 12px 16px;
+  border-radius: var(--radius-md);
+}
+
+body.atendimento-view .sidebar .sidebar-footer {
+  padding-top: 12px;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+body.atendimento-view .sidebar:hover .sidebar-footer {
+  justify-content: flex-start;
+}
+
+body.atendimento-view .sidebar .instance-badge {
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  justify-content: center;
+}
+
+body.atendimento-view .sidebar:hover .instance-badge {
+  padding: 12px;
+  width: 100%;
+  border: 1px solid var(--border-color);
+  background: var(--surface-subtle);
+  justify-content: flex-start;
+}
+
+/* Chat Header clean */
+body.atendimento-view .chat-header {
+  background-color: #f0f2f5;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: none;
+  height: 60px;
+  padding: 10px 16px;
+}
+
+body.atendimento-view .chat-header .name {
+  font-weight: 500;
+  font-size: 16px;
+}
+
+body.atendimento-view .chat-header .status-pill,
+body.atendimento-view .chat-header .meta-row {
+  display: none !important;
+}
+
+body.atendimento-view .header-actions-primary {
+  display: none !important;
+}
+
+/* Chat Footer clean */
+body.atendimento-view .chat-footer {
+  background-color: #f0f2f5;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 10px 16px;
+}
+
+body.atendimento-view .composer-context,
+body.atendimento-view .composer-notice {
+  display: none !important;
+}
+
+body.atendimento-view .chat-footer textarea {
+  border-radius: 8px;
+  border: none;
+  background-color: #ffffff;
+  padding: 10px 12px;
+  box-shadow: none;
+  font-size: 15px;
+  min-height: 42px;
+}
+
+body.atendimento-view .send-button {
+  background: transparent;
+  color: #54656f;
+  box-shadow: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+body.atendimento-view .send-button:hover {
+  transform: none;
+  box-shadow: none;
+  background: rgba(0, 0, 0, 0.05);
+  color: #111b21;
+}
+
+/* Controle de visibilidade do painel direito (oculto por padrão) */
+.contact-details-column {
+  display: none !important;
+}
+
+.agent-panel.details-open .contact-details-column {
+  display: flex !important;
+  width: 320px;
+}
+
+.contact-actions-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-top: 16px;
+}
+
