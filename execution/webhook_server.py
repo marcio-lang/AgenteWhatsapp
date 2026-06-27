@@ -473,9 +473,34 @@ def api_connect_instance(current_user, name):
         url = f"{local_client.base_url}/instance/connect/{name}"
         response = local_client.session.get(url, headers=local_client.headers, timeout=15)
         res_json = response.json()
+        
+        # If the instance does not exist in Evolution API, try to recreate it once more
+        if response.status_code == 404 or (isinstance(res_json, dict) and 'instanceName' not in res_json and res_json.get('status') == 404):
+            print(f"Direct connection returned 404, attempting recreate for {name}...")
+            token = inst.get('token') or ""
+            res_create = local_client.create_evolution_instance(name, token)
+            
+            # If recreation succeeded, try connection once more
+            if 'instance' in res_create or 'hash' in res_create or res_create.get('status') == 'created':
+                # Register webhook
+                webhook_url = f"http://{request.host}/webhook"
+                local_client.set_evolution_webhook(name, webhook_url)
+                
+                # Fetch connect QR Code again
+                response = local_client.session.get(url, headers=local_client.headers, timeout=15)
+                res_json = response.json()
+            else:
+                return jsonify({
+                    'error': 'A Evolution API está travada ou offline. Por favor, reinicie a Evolution API na VPS e tente novamente.'
+                }), 503
+                
         return jsonify(res_json), response.status_code
     except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+        return jsonify({
+            'status': 'error',
+            'error': 'Não foi possível conectar com a Evolution API. Verifique se o serviço está rodando na VPS.',
+            'message': str(e)
+        }), 500
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
