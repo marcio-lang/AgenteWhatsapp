@@ -3781,14 +3781,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    const asideAssumeBtn = document.getElementById('aside-assume-btn');
-    if (asideAssumeBtn) asideAssumeBtn.onclick = () => chatAssumeBtn.click();
-
-    const asideTransferBtn = document.getElementById('aside-transfer-btn');
-    if (asideTransferBtn) asideTransferBtn.onclick = () => chatTransferBtn.click();
-
-    const asideCloseBtn = document.getElementById('aside-close-btn');
-    if (asideCloseBtn) asideCloseBtn.onclick = () => chatCloseBtn.click();
 
     document.querySelectorAll('.modal-close-btn, .modal-cancel-btn, .modal-close-action-btn').forEach(btn => {
         btn.onclick = () => {
