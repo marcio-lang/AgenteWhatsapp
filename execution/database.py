@@ -18,6 +18,37 @@ def init_db():
     conn = get_db()
     cursor = conn.cursor()
     
+    # New tables for multi-atendimento
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS agents (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        email TEXT UNIQUE,
+        password_hash TEXT,
+        role TEXT, -- 'admin' or 'agent'
+        status TEXT DEFAULT 'offline'
+    )
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS instances (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT UNIQUE,
+        token TEXT,
+        status TEXT DEFAULT 'close'
+    )
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS agent_instances (
+        agent_id INTEGER,
+        instance_id INTEGER,
+        PRIMARY KEY (agent_id, instance_id),
+        FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+        FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE
+    )
+    ''')
+    
     # Contacts table
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS contacts (
@@ -29,9 +60,22 @@ def init_db():
         is_favorite INTEGER DEFAULT 0,
         is_archived INTEGER DEFAULT 0,
         unread_count INTEGER DEFAULT 0,
-        last_message_time TIMESTAMP
+        last_message_time TIMESTAMP,
+        assigned_to INTEGER,
+        instance_id INTEGER,
+        FOREIGN KEY (assigned_to) REFERENCES agents(id) ON DELETE SET NULL,
+        FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE
     )
     ''')
+    
+    try:
+        cursor.execute("ALTER TABLE contacts ADD COLUMN assigned_to INTEGER;")
+    except Exception:
+        pass
+    try:
+        cursor.execute("ALTER TABLE contacts ADD COLUMN instance_id INTEGER;")
+    except Exception:
+        pass
     
     # Messages table
     cursor.execute('''
@@ -46,9 +90,21 @@ def init_db():
         from_me INTEGER DEFAULT 0,
         is_read INTEGER DEFAULT 0,
         status TEXT DEFAULT 'sent',
-        FOREIGN KEY (jid) REFERENCES contacts (jid)
+        instance_id INTEGER,
+        is_internal INTEGER DEFAULT 0,
+        FOREIGN KEY (jid) REFERENCES contacts (jid),
+        FOREIGN KEY (instance_id) REFERENCES instances(id) ON DELETE CASCADE
     )
     ''')
+    
+    try:
+        cursor.execute("ALTER TABLE messages ADD COLUMN instance_id INTEGER;")
+    except Exception:
+        pass
+    try:
+        cursor.execute("ALTER TABLE messages ADD COLUMN is_internal INTEGER DEFAULT 0;")
+    except Exception:
+        pass
 
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS contact_groups (
@@ -98,7 +154,7 @@ def init_db():
     conn.commit()
     conn.close()
 
-def save_message(msg_id, jid, sender, content, msg_type='text', metadata=None, from_me=0):
+def save_message(msg_id, jid, sender, content, msg_type='text', metadata=None, from_me=0, instance_id=None, is_internal=0):
     conn = get_db()
     cursor = conn.cursor()
     
@@ -106,19 +162,23 @@ def save_message(msg_id, jid, sender, content, msg_type='text', metadata=None, f
     metadata_json = json.dumps(metadata) if metadata else None
     
     cursor.execute('''
-    INSERT OR REPLACE INTO messages (id, jid, sender, content, type, metadata, timestamp, from_me, is_read)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (msg_id, jid, sender, content, msg_type, metadata_json, timestamp, from_me, 1 if from_me else 0))
+    INSERT OR REPLACE INTO messages (id, jid, sender, content, type, metadata, timestamp, from_me, is_read, instance_id, is_internal)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (msg_id, jid, sender, content, msg_type, metadata_json, timestamp, from_me, 1 if from_me else 0, instance_id, is_internal))
     
-    # Update contact metadata and increment unread count if not from me
-    if not from_me:
-        cursor.execute('''
-        UPDATE contacts SET last_message_time = ?, unread_count = unread_count + 1 WHERE jid = ?
-        ''', (timestamp, jid))
-    else:
-        cursor.execute('''
-        UPDATE contacts SET last_message_time = ? WHERE jid = ?
-        ''', (timestamp, jid))
+    # Update contact metadata and increment unread count if not from me and not internal
+    if not is_internal:
+        if not from_me:
+            cursor.execute('''
+            UPDATE contacts SET last_message_time = ?, unread_count = unread_count + 1 WHERE jid = ?
+            ''', (timestamp, jid))
+        else:
+            cursor.execute('''
+            UPDATE contacts SET last_message_time = ? WHERE jid = ?
+            ''', (timestamp, jid))
+            
+    if instance_id is not None:
+        cursor.execute("UPDATE contacts SET instance_id = ? WHERE jid = ?", (instance_id, jid))
     
     conn.commit()
     conn.close()
@@ -131,7 +191,7 @@ def mark_as_read(jid):
     conn.commit()
     conn.close()
 
-def update_contact(jid, push_name=None, notes=None, tags=None, is_favorite=None, is_archived=None, profile_pic=None):
+def update_contact(jid, push_name=None, notes=None, tags=None, is_favorite=None, is_archived=None, profile_pic=None, assigned_to=None, instance_id=None):
     conn = get_db()
     cursor = conn.cursor()
     
@@ -154,22 +214,50 @@ def update_contact(jid, push_name=None, notes=None, tags=None, is_favorite=None,
         cursor.execute("UPDATE contacts SET is_archived = ? WHERE jid = ?", (1 if is_archived else 0, jid))
     if profile_pic is not None:
         cursor.execute("UPDATE contacts SET profile_pic = ? WHERE jid = ?", (profile_pic, jid))
+    if assigned_to is not None:
+        if assigned_to in ["unassigned", "", 0, -1, None]:
+            cursor.execute("UPDATE contacts SET assigned_to = NULL WHERE jid = ?", (jid,))
+        else:
+            cursor.execute("UPDATE contacts SET assigned_to = ? WHERE jid = ?", (assigned_to, jid))
+    if instance_id is not None:
+        cursor.execute("UPDATE contacts SET instance_id = ? WHERE jid = ?", (instance_id, jid))
         
     conn.commit()
     conn.close()
 
-def get_all_chats():
+def get_all_chats(instance_id=None, agent_id=None, show_unassigned=True):
     conn = get_db()
     cursor = conn.cursor()
-    # Get contacts with last message preview
-    cursor.execute('''
+    
+    query = '''
     SELECT c.*, m.content as last_msg, m.timestamp as last_time
     FROM contacts c
     LEFT JOIN messages m ON m.id = (
         SELECT id FROM messages WHERE jid = c.jid ORDER BY timestamp DESC LIMIT 1
     )
-    ORDER BY c.last_message_time DESC
-    ''')
+    '''
+    
+    conditions = []
+    params = []
+    
+    if instance_id is not None:
+        conditions.append("c.instance_id = ?")
+        params.append(instance_id)
+        
+    if agent_id is not None:
+        if show_unassigned:
+            conditions.append("(c.assigned_to = ? OR c.assigned_to IS NULL)")
+            params.append(agent_id)
+        else:
+            conditions.append("c.assigned_to = ?")
+            params.append(agent_id)
+            
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+        
+    query += " ORDER BY c.last_message_time DESC"
+    
+    cursor.execute(query, tuple(params))
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
@@ -477,6 +565,188 @@ def is_message_processed(msg_id):
     exists = cursor.fetchone() is not None
     conn.close()
     return exists
+
+# --- AGENT AND INSTANCE MANAGEMENT FOR MULTI-ATENDIMENTO ---
+
+def create_agent(name, email, password_hash, role='agent'):
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+        INSERT INTO agents (name, email, password_hash, role, status)
+        VALUES (?, ?, ?, ?, 'offline')
+        ''', (name, email, password_hash, role))
+        conn.commit()
+        agent_id = cursor.lastrowid
+        return agent_id
+    except Exception as e:
+        print(f"Error creating agent: {e}")
+        return None
+    finally:
+        conn.close()
+
+def get_agent_by_email(email):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM agents WHERE email = ?", (email,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_agent_by_id(agent_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM agents WHERE id = ?", (agent_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_all_agents():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id, name, email, role, status FROM agents ORDER BY name ASC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def update_agent(agent_id, name=None, email=None, password_hash=None, role=None, status=None):
+    conn = get_db()
+    cursor = conn.cursor()
+    if name is not None:
+        cursor.execute("UPDATE agents SET name = ? WHERE id = ?", (name, agent_id))
+    if email is not None:
+        cursor.execute("UPDATE agents SET email = ? WHERE id = ?", (email, agent_id))
+    if password_hash is not None:
+        cursor.execute("UPDATE agents SET password_hash = ? WHERE id = ?", (password_hash, agent_id))
+    if role is not None:
+        cursor.execute("UPDATE agents SET role = ? WHERE id = ?", (role, agent_id))
+    if status is not None:
+        cursor.execute("UPDATE agents SET status = ? WHERE id = ?", (status, agent_id))
+    conn.commit()
+    conn.close()
+
+def delete_agent(agent_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM agents WHERE id = ?", (agent_id,))
+    conn.commit()
+    conn.close()
+
+def create_instance(name, token=None, status='close'):
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+        INSERT INTO instances (name, token, status)
+        VALUES (?, ?, ?)
+        ''', (name, token, status))
+        conn.commit()
+        inst_id = cursor.lastrowid
+        return inst_id
+    except Exception as e:
+        print(f"Error creating instance: {e}")
+        return None
+    finally:
+        conn.close()
+
+def get_instance_by_name(name):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM instances WHERE name = ?", (name,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_instance_by_id(instance_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM instances WHERE id = ?", (instance_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+def get_all_instances():
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM instances ORDER BY name ASC")
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def update_instance_status(name, status):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE instances SET status = ? WHERE name = ?", (status, name))
+    conn.commit()
+    conn.close()
+
+def update_instance_token(name, token):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE instances SET token = ? WHERE name = ?", (token, name))
+    conn.commit()
+    conn.close()
+
+def delete_instance(instance_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM instances WHERE id = ?", (instance_id,))
+    conn.commit()
+    conn.close()
+
+def link_agent_instance(agent_id, instance_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+        INSERT OR REPLACE INTO agent_instances (agent_id, instance_id)
+        VALUES (?, ?)
+        ''', (agent_id, instance_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error linking agent/instance: {e}")
+        return False
+    finally:
+        conn.close()
+
+def unlink_agent_instance(agent_id, instance_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM agent_instances WHERE agent_id = ? AND instance_id = ?", (agent_id, instance_id))
+    conn.commit()
+    conn.close()
+
+def get_agent_instances(agent_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+    SELECT i.* FROM instances i
+    JOIN agent_instances ai ON ai.instance_id = i.id
+    WHERE ai.agent_id = ?
+    ''', (agent_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def get_instance_agents(instance_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('''
+    SELECT a.id, a.name, a.email, a.role, a.status FROM agents a
+    JOIN agent_instances ai ON ai.agent_id = a.id
+    WHERE ai.instance_id = ?
+    ''', (instance_id,))
+    rows = cursor.fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+def assign_contact_to_agent(jid, agent_id):
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE contacts SET assigned_to = ? WHERE jid = ?", (agent_id, jid))
+    conn.commit()
+    conn.close()
 
 if __name__ == "__main__":
     init_db()

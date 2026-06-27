@@ -5,13 +5,12 @@ from utils import get_offer_files
 from constants import *
 from logger import log_message
 
-USE_POSTGRES = os.getenv("USE_POSTGRES", "0") == "1"
 if USE_POSTGRES:
-    from database_pg import save_message, get_active_flow, list_flows, create_flow, create_flow_rule, set_active_flow, list_flow_rules
+    from database_pg import *
 else:
-    from database import save_message, get_active_flow, list_flows, create_flow, create_flow_rule, set_active_flow, list_flow_rules
+    from database import *
 
-def _send_text_and_persist(client_obj, target_number, text):
+def _send_text_and_persist(client_obj, target_number, text, instance_id=None):
     """Envia mensagem via API e persiste no banco configurado."""
     resp = client_obj.send_text(target_number, text)
     msg_id = None
@@ -25,7 +24,8 @@ def _send_text_and_persist(client_obj, target_number, text):
         jid=target_number,
         sender="bot",
         content=text,
-        from_me=1
+        from_me=1,
+        instance_id=instance_id
     )
 
 def _ensure_default_flow():
@@ -90,33 +90,39 @@ def _pick_rule(rules, message_content):
             return r
     return default_rule
 
-def process_message_task(target_number, message_content):
+def process_message_task(target_number, message_content, instance_id=None):
     try:
-        log_message(f"[Worker] Processing message for {target_number}: {message_content}")
+        log_message(f"[Worker] Processing message for {target_number} (Instance ID: {instance_id}): {message_content}")
         local_client = EvolutionClient()
+        
+        # Configure instance if provided
+        if instance_id is not None:
+            inst_details = get_instance_by_id(instance_id)
+            if inst_details and inst_details.get("name"):
+                local_client.instance_name = inst_details["name"]
 
         flow_id = _ensure_default_flow()
         rules = list_flow_rules(flow_id) if flow_id else []
         rule = _pick_rule(rules, message_content)
 
         if not rule:
-            _send_text_and_persist(local_client, target_number, MENU_TEXT)
+            _send_text_and_persist(local_client, target_number, MENU_TEXT, instance_id)
             return
 
         action_type = (rule.get("action_type") or "").strip()
         action_value = rule.get("action_value") or ""
 
         if action_type == "text":
-            _send_text_and_persist(local_client, target_number, str(action_value))
+            _send_text_and_persist(local_client, target_number, str(action_value), instance_id)
             return
 
         if action_type == "offers":
             intro = str(action_value).strip()
             if intro:
-                _send_text_and_persist(local_client, target_number, intro)
+                _send_text_and_persist(local_client, target_number, intro, instance_id)
             files = get_offer_files()
             if not files:
-                _send_text_and_persist(local_client, target_number, "No momento não temos arquivos de ofertas cadastrados.")
+                _send_text_and_persist(local_client, target_number, "No momento não temos arquivos de ofertas cadastrados.", instance_id)
                 return
             for f in files:
                 m_type = "document" if str(f).lower().endswith(".pdf") else "image"
@@ -137,13 +143,14 @@ def process_message_task(target_number, message_content):
                         content=local_url,
                         msg_type=m_type,
                         metadata={"filename": filename, "local_url": local_url},
-                        from_me=1
+                        from_me=1,
+                        instance_id=instance_id
                     )
                 except Exception as e:
                     log_message(f"[Worker] Error persisting media message: {e}")
             return
 
-        _send_text_and_persist(local_client, target_number, MENU_TEXT)
+        _send_text_and_persist(local_client, target_number, MENU_TEXT, instance_id)
             
     except Exception as e:
         log_message(f"[Worker] Error processing message: {e}")

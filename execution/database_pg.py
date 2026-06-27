@@ -38,6 +38,35 @@ def init_db():
 
     cursor = conn.cursor()
     
+    # Novas tabelas para multi-atendimento
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS agents (
+        id SERIAL PRIMARY KEY,
+        name TEXT,
+        email TEXT UNIQUE,
+        password_hash TEXT,
+        role TEXT, -- 'admin' ou 'agent'
+        status TEXT DEFAULT 'offline'
+    );
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS instances (
+        id SERIAL PRIMARY KEY,
+        name TEXT UNIQUE,
+        token TEXT,
+        status TEXT DEFAULT 'close'
+    );
+    ''')
+
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS agent_instances (
+        agent_id INTEGER REFERENCES agents(id) ON DELETE CASCADE,
+        instance_id INTEGER REFERENCES instances(id) ON DELETE CASCADE,
+        PRIMARY KEY (agent_id, instance_id)
+    );
+    ''')
+    
     # Tabela de Contatos
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS contacts (
@@ -49,12 +78,24 @@ def init_db():
         is_favorite BOOLEAN DEFAULT FALSE,
         is_archived BOOLEAN DEFAULT FALSE,
         unread_count INTEGER DEFAULT 0,
-        last_message_time TIMESTAMP
+        last_message_time TIMESTAMP,
+        assigned_to INTEGER REFERENCES agents(id) ON DELETE SET NULL,
+        instance_id INTEGER REFERENCES instances(id) ON DELETE CASCADE
     );
     ''')
     
+    try:
+        cursor.execute("ALTER TABLE contacts ADD COLUMN assigned_to INTEGER REFERENCES agents(id) ON DELETE SET NULL;")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    try:
+        cursor.execute("ALTER TABLE contacts ADD COLUMN instance_id INTEGER REFERENCES instances(id) ON DELETE CASCADE;")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    
     # Tabela de Mensagens
-    # No Postgres, BOOLEAN é o tipo nativo (0/1 funciona, mas True/False é melhor)
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS messages (
         id TEXT PRIMARY KEY,
@@ -66,9 +107,22 @@ def init_db():
         timestamp TIMESTAMP,
         from_me BOOLEAN DEFAULT FALSE,
         is_read BOOLEAN DEFAULT FALSE,
-        status TEXT DEFAULT 'sent'
+        status TEXT DEFAULT 'sent',
+        instance_id INTEGER REFERENCES instances(id) ON DELETE CASCADE,
+        is_internal BOOLEAN DEFAULT FALSE
     );
     ''')
+    
+    try:
+        cursor.execute("ALTER TABLE messages ADD COLUMN instance_id INTEGER REFERENCES instances(id) ON DELETE CASCADE;")
+        conn.commit()
+    except Exception:
+        conn.rollback()
+    try:
+        cursor.execute("ALTER TABLE messages ADD COLUMN is_internal BOOLEAN DEFAULT FALSE;")
+        conn.commit()
+    except Exception:
+        conn.rollback()
 
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS contact_groups (
@@ -117,7 +171,7 @@ def init_db():
     conn.close()
     print("Tabelas PostgreSQL verificadas/criadas.")
 
-def save_message(msg_id, jid, sender, content, msg_type='text', metadata=None, from_me=0):
+def save_message(msg_id, jid, sender, content, msg_type='text', metadata=None, from_me=0, instance_id=None, is_internal=0):
     conn = get_db_connection()
     if not conn: return
 
@@ -125,29 +179,30 @@ def save_message(msg_id, jid, sender, content, msg_type='text', metadata=None, f
     timestamp = datetime.datetime.now()
     metadata_json = json.dumps(metadata) if metadata else None
     
-    # Converter 0/1 para Boolean se necessário, mas Postgres aceita ints em alguns contextos
-    # Vamos garantir bool
     is_from_me = bool(from_me)
-    is_read = bool(from_me) # Se for meu, já nasce lida
+    is_read = bool(from_me)
+    is_internal_bool = bool(is_internal)
     
     try:
-        # Upsert (Insert ou Update)
         cursor.execute('''
-        INSERT INTO messages (id, jid, sender, content, type, metadata, timestamp, from_me, is_read)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO messages (id, jid, sender, content, type, metadata, timestamp, from_me, is_read, instance_id, is_internal)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (id) DO UPDATE 
         SET status = EXCLUDED.status;
-        ''', (msg_id, jid, sender, content, msg_type, metadata_json, timestamp, is_from_me, is_read))
+        ''', (msg_id, jid, sender, content, msg_type, metadata_json, timestamp, is_from_me, is_read, instance_id, is_internal_bool))
         
-        # Atualizar contato
-        if not is_from_me:
-            cursor.execute('''
-            UPDATE contacts SET last_message_time = %s, unread_count = unread_count + 1 WHERE jid = %s
-            ''', (timestamp, jid))
-        else:
-            cursor.execute('''
-            UPDATE contacts SET last_message_time = %s WHERE jid = %s
-            ''', (timestamp, jid))
+        if not is_internal_bool:
+            if not is_from_me:
+                cursor.execute('''
+                UPDATE contacts SET last_message_time = %s, unread_count = unread_count + 1 WHERE jid = %s
+                ''', (timestamp, jid))
+            else:
+                cursor.execute('''
+                UPDATE contacts SET last_message_time = %s WHERE jid = %s
+                ''', (timestamp, jid))
+                
+        if instance_id is not None:
+            cursor.execute("UPDATE contacts SET instance_id = %s WHERE jid = %s", (instance_id, jid))
             
         conn.commit()
     except Exception as e:
@@ -171,13 +226,12 @@ def mark_as_read(jid):
         cursor.close()
         conn.close()
 
-def update_contact(jid, push_name=None, notes=None, tags=None, is_favorite=None, is_archived=None, profile_pic=None):
+def update_contact(jid, push_name=None, notes=None, tags=None, is_favorite=None, is_archived=None, profile_pic=None, assigned_to=None, instance_id=None):
     conn = get_db_connection()
     if not conn: return
     cursor = conn.cursor()
     
     try:
-        # Upsert do contato
         cursor.execute('''
         INSERT INTO contacts (jid, push_name) VALUES (%s, %s)
         ON CONFLICT (jid) DO NOTHING;
@@ -195,6 +249,13 @@ def update_contact(jid, push_name=None, notes=None, tags=None, is_favorite=None,
             cursor.execute("UPDATE contacts SET is_archived = %s WHERE jid = %s", (bool(is_archived), jid))
         if profile_pic is not None:
             cursor.execute("UPDATE contacts SET profile_pic = %s WHERE jid = %s", (profile_pic, jid))
+        if assigned_to is not None:
+            if assigned_to in ["unassigned", "", 0, -1, None]:
+                cursor.execute("UPDATE contacts SET assigned_to = NULL WHERE jid = %s", (jid,))
+            else:
+                cursor.execute("UPDATE contacts SET assigned_to = %s WHERE jid = %s", (assigned_to, jid))
+        if instance_id is not None:
+            cursor.execute("UPDATE contacts SET instance_id = %s WHERE jid = %s", (instance_id, jid))
             
         conn.commit()
     except Exception as e:
@@ -211,23 +272,42 @@ def convert_dates(rows):
                 row[key] = value.isoformat()
     return rows
 
-def get_all_chats():
+def get_all_chats(instance_id=None, agent_id=None, show_unassigned=True):
     conn = get_db_connection()
     if not conn: return []
-    # Usar RealDictCursor para retornar dicionários como no sqlite3.Row
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     
+    query = '''
+    SELECT c.*, m.content as last_msg, m.timestamp as last_time
+    FROM contacts c
+    LEFT JOIN messages m ON m.id = (
+        SELECT id FROM messages WHERE jid = c.jid ORDER BY timestamp DESC LIMIT 1
+    )
+    '''
+    
+    conditions = []
+    params = []
+    
+    if instance_id is not None:
+        conditions.append("c.instance_id = %s")
+        params.append(instance_id)
+        
+    if agent_id is not None:
+        if show_unassigned:
+            conditions.append("(c.assigned_to = %s OR c.assigned_to IS NULL)")
+            params.append(agent_id)
+        else:
+            conditions.append("c.assigned_to = %s")
+            params.append(agent_id)
+            
+    if conditions:
+        query += " WHERE " + " AND ".join(conditions)
+        
+    query += " ORDER BY c.last_message_time DESC NULLS LAST"
+    
     try:
-        cursor.execute('''
-        SELECT c.*, m.content as last_msg, m.timestamp as last_time
-        FROM contacts c
-        LEFT JOIN messages m ON m.id = (
-            SELECT id FROM messages WHERE jid = c.jid ORDER BY timestamp DESC LIMIT 1
-        )
-        ORDER BY c.last_message_time DESC NULLS LAST
-        ''')
+        cursor.execute(query, tuple(params))
         rows = cursor.fetchall()
-        # RealDictCursor já retorna dicts, mas vamos garantir conversão se necessário
         result = [dict(row) for row in rows]
         return convert_dates(result)
     except Exception as e:
@@ -679,6 +759,305 @@ def is_message_processed(msg_id):
     except Exception as e:
         print(f"Erro is_message_processed: {e}")
         return False
+    finally:
+        cursor.close()
+        conn.close()
+
+# --- AGENT AND INSTANCE MANAGEMENT FOR MULTI-ATENDIMENTO ---
+
+def create_agent(name, email, password_hash, role='agent'):
+    conn = get_db_connection()
+    if not conn: return None
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+        INSERT INTO agents (name, email, password_hash, role, status)
+        VALUES (%s, %s, %s, %s, 'offline')
+        RETURNING id;
+        ''', (name, email, password_hash, role))
+        agent_id = cursor.fetchone()[0]
+        conn.commit()
+        return agent_id
+    except Exception as e:
+        print(f"Error creating agent: {e}")
+        conn.rollback()
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_agent_by_email(email):
+    conn = get_db_connection()
+    if not conn: return None
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute("SELECT * FROM agents WHERE email = %s", (email,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        print(f"Error get_agent_by_email: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_agent_by_id(agent_id):
+    conn = get_db_connection()
+    if not conn: return None
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute("SELECT * FROM agents WHERE id = %s", (agent_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        print(f"Error get_agent_by_id: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_all_agents():
+    conn = get_db_connection()
+    if not conn: return []
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute("SELECT id, name, email, role, status FROM agents ORDER BY name ASC")
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    except Exception as e:
+        print(f"Error get_all_agents: {e}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+def update_agent(agent_id, name=None, email=None, password_hash=None, role=None, status=None):
+    conn = get_db_connection()
+    if not conn: return
+    cursor = conn.cursor()
+    try:
+        if name is not None:
+            cursor.execute("UPDATE agents SET name = %s WHERE id = %s", (name, agent_id))
+        if email is not None:
+            cursor.execute("UPDATE agents SET email = %s WHERE id = %s", (email, agent_id))
+        if password_hash is not None:
+            cursor.execute("UPDATE agents SET password_hash = %s WHERE id = %s", (password_hash, agent_id))
+        if role is not None:
+            cursor.execute("UPDATE agents SET role = %s WHERE id = %s", (role, agent_id))
+        if status is not None:
+            cursor.execute("UPDATE agents SET status = %s WHERE id = %s", (status, agent_id))
+        conn.commit()
+    except Exception as e:
+        print(f"Error update_agent: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
+
+def delete_agent(agent_id):
+    conn = get_db_connection()
+    if not conn: return
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM agents WHERE id = %s", (agent_id,))
+        conn.commit()
+    except Exception as e:
+        print(f"Error delete_agent: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
+
+def create_instance(name, token=None, status='close'):
+    conn = get_db_connection()
+    if not conn: return None
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+        INSERT INTO instances (name, token, status)
+        VALUES (%s, %s, %s)
+        RETURNING id;
+        ''', (name, token, status))
+        inst_id = cursor.fetchone()[0]
+        conn.commit()
+        return inst_id
+    except Exception as e:
+        print(f"Error creating instance: {e}")
+        conn.rollback()
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_instance_by_name(name):
+    conn = get_db_connection()
+    if not conn: return None
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute("SELECT * FROM instances WHERE name = %s", (name,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        print(f"Error get_instance_by_name: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_instance_by_id(instance_id):
+    conn = get_db_connection()
+    if not conn: return None
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute("SELECT * FROM instances WHERE id = %s", (instance_id,))
+        row = cursor.fetchone()
+        return dict(row) if row else None
+    except Exception as e:
+        print(f"Error get_instance_by_id: {e}")
+        return None
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_all_instances():
+    conn = get_db_connection()
+    if not conn: return []
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute("SELECT * FROM instances ORDER BY name ASC")
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    except Exception as e:
+        print(f"Error get_all_instances: {e}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+def update_instance_status(name, status):
+    conn = get_db_connection()
+    if not conn: return
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE instances SET status = %s WHERE name = %s", (status, name))
+        conn.commit()
+    except Exception as e:
+        print(f"Error update_instance_status: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
+
+def update_instance_token(name, token):
+    conn = get_db_connection()
+    if not conn: return
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE instances SET token = %s WHERE name = %s", (token, name))
+        conn.commit()
+    except Exception as e:
+        print(f"Error update_instance_token: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
+
+def delete_instance(instance_id):
+    conn = get_db_connection()
+    if not conn: return
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM instances WHERE id = %s", (instance_id,))
+        conn.commit()
+    except Exception as e:
+        print(f"Error delete_instance: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
+
+def link_agent_instance(agent_id, instance_id):
+    conn = get_db_connection()
+    if not conn: return False
+    cursor = conn.cursor()
+    try:
+        cursor.execute('''
+        INSERT INTO agent_instances (agent_id, instance_id)
+        VALUES (%s, %s)
+        ON CONFLICT (agent_id, instance_id) DO NOTHING;
+        ''', (agent_id, instance_id))
+        conn.commit()
+        return True
+    except Exception as e:
+        print(f"Error linking agent/instance: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+def unlink_agent_instance(agent_id, instance_id):
+    conn = get_db_connection()
+    if not conn: return
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM agent_instances WHERE agent_id = %s AND instance_id = %s", (agent_id, instance_id))
+        conn.commit()
+    except Exception as e:
+        print(f"Error unlinking agent/instance: {e}")
+        conn.rollback()
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_agent_instances(agent_id):
+    conn = get_db_connection()
+    if not conn: return []
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute('''
+        SELECT i.* FROM instances i
+        JOIN agent_instances ai ON ai.instance_id = i.id
+        WHERE ai.agent_id = %s
+        ''', (agent_id,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    except Exception as e:
+        print(f"Error get_agent_instances: {e}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_instance_agents(instance_id):
+    conn = get_db_connection()
+    if not conn: return []
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    try:
+        cursor.execute('''
+        SELECT a.id, a.name, a.email, a.role, a.status FROM agents a
+        JOIN agent_instances ai ON ai.agent_id = a.id
+        WHERE ai.instance_id = %s
+        ''', (instance_id,))
+        rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    except Exception as e:
+        print(f"Error get_instance_agents: {e}")
+        return []
+    finally:
+        cursor.close()
+        conn.close()
+
+def assign_contact_to_agent(jid, agent_id):
+    conn = get_db_connection()
+    if not conn: return
+    cursor = conn.cursor()
+    try:
+        cursor.execute("UPDATE contacts SET assigned_to = %s WHERE jid = %s", (agent_id, jid))
+        conn.commit()
+    except Exception as e:
+        print(f"Error assign_contact_to_agent: {e}")
+        conn.rollback()
     finally:
         cursor.close()
         conn.close()

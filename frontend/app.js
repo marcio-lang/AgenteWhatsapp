@@ -268,6 +268,14 @@ document.addEventListener('DOMContentLoaded', () => {
             if (targetSectionId === 'agente') {
                 fetchAgentFlows();
             }
+
+            if (targetSectionId === 'admin-instances') {
+                fetchAdminInstances();
+            }
+
+            if (targetSectionId === 'admin-agents') {
+                fetchAdminAgents();
+            }
         });
     });
 
@@ -2054,14 +2062,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 messagesContainer.appendChild(daySeparator);
             }
 
+            const isInternal = msg.is_internal === 1 || msg.is_internal === true || String(msg.is_internal).toLowerCase() === 'true';
+            
             const div = document.createElement('div');
-            div.className = `message ${msg.from_me ? 'sent' : 'received'} ${getMessageTypeClass(msg.type)}`.trim();
+            div.className = `message ${msg.from_me ? 'sent' : 'received'} ${getMessageTypeClass(msg.type)} ${isInternal ? 'whisper' : ''}`.trim();
 
             const type = String(msg.type || 'text');
             const hasId = msg && msg.id != null && String(msg.id).trim() !== '';
             const messageLabel = document.createElement('div');
             messageLabel.className = 'message-label';
-            messageLabel.textContent = msg.from_me ? 'Você' : (msg.sender || 'Cliente');
+            messageLabel.textContent = isInternal ? `${msg.sender} (Nota Interna)` : (msg.from_me ? 'Você' : (msg.sender || 'Cliente'));
 
             const wrapper = document.createElement('div');
             wrapper.className = 'message-body';
@@ -3554,10 +3564,681 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // --- AUTHENTICATION & WEBSOCKET SYSTEM ---
+    let socket = null;
+    let isWhisperMode = false;
+
+    // Intercept window.fetch to automatically add JWT auth headers
+    const originalFetch = window.fetch;
+    window.fetch = function(url, options = {}) {
+        const token = localStorage.getItem('token');
+        if (token) {
+            options.headers = options.headers || {};
+            if (!(options.body instanceof FormData)) {
+                options.headers['Content-Type'] = options.headers['Content-Type'] || 'application/json';
+            }
+            options.headers['Authorization'] = `Bearer ${token}`;
+        }
+        return originalFetch(url, options).then(response => {
+            if (response.status === 401 && !url.includes('/api/auth/login')) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+                showLoginOverlay();
+            }
+            return response;
+        });
+    };
+
+    function showLoginOverlay() {
+        const overlay = document.getElementById('login-overlay');
+        if (overlay) overlay.style.display = 'flex';
+        document.body.classList.remove('admin-role');
+        stopPolling();
+    }
+
+    function initSocket() {
+        if (socket) return;
+        const token = localStorage.getItem('token');
+        if (!token) return;
+
+        socket = io({
+            auth: {
+                token: token
+            }
+        });
+
+        socket.on('connect', () => {
+            console.log('WebSocket connected successfully');
+        });
+
+        socket.on('new_message', (msg) => {
+            console.log('WebSocket message received:', msg);
+            
+            const user = JSON.parse(localStorage.getItem('user'));
+            if (user && user.role !== 'admin' && user.instances) {
+                if (!user.instances.includes(msg.instance_id)) {
+                    return;
+                }
+            }
+
+            if (!msg.from_me) {
+                showNotification(msg.sender, msg.content);
+            }
+
+            if (activeChatJid && msg.jid === activeChatJid) {
+                messages.push(msg);
+                renderMessages();
+                fetch(`/api/read/${msg.jid}`, { method: 'POST' }).catch(() => null);
+            }
+
+            fetchChats();
+        });
+
+        socket.on('contact_assigned', (data) => {
+            console.log('WebSocket contact assignment update:', data);
+            fetchChats();
+            if (activeChatJid && data.jid === activeChatJid) {
+                const activeChat = chats.find(c => c.jid === activeChatJid);
+                if (activeChat) {
+                    activeChat.assigned_to = data.assigned_to;
+                    const detailsOwner = document.getElementById('details-owner');
+                    if (detailsOwner) {
+                        detailsOwner.innerText = data.assigned_to ? `Atendente ID: ${data.assigned_to}` : 'Não atribuído';
+                    }
+                }
+            }
+        });
+
+        socket.on('disconnect', () => {
+            console.log('WebSocket disconnected');
+        });
+    }
+
+    function checkAuth() {
+        const token = localStorage.getItem('token');
+        const user = JSON.parse(localStorage.getItem('user'));
+        const loginOverlay = document.getElementById('login-overlay');
+
+        if (!token || !user) {
+            showLoginOverlay();
+            return false;
+        }
+
+        if (loginOverlay) loginOverlay.style.display = 'none';
+
+        const userAvatar = document.getElementById('user-avatar');
+        const userDisplayName = document.getElementById('user-display-name');
+        const userDisplayRole = document.getElementById('user-display-role');
+
+        if (userAvatar) userAvatar.innerText = user.name.charAt(0).toUpperCase();
+        if (userDisplayName) userDisplayName.innerText = user.name;
+        if (userDisplayRole) userDisplayRole.innerText = user.role === 'admin' ? 'Administrador' : 'Atendente';
+
+        if (user.role === 'admin') {
+            document.body.classList.add('admin-role');
+            document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'flex');
+        } else {
+            document.body.classList.remove('admin-role');
+            document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
+        }
+
+        initSocket();
+        startPolling();
+        fetchInstancesList();
+
+        return true;
+    }
+
+    const filterInstanceSelect = document.getElementById('filter-instance-select');
+    if (filterInstanceSelect) {
+        filterInstanceSelect.onchange = () => {
+            fetchChats();
+        };
+    }
+
+    const whisperBtn = document.getElementById('chat-whisper-btn');
+    if (whisperBtn) {
+        whisperBtn.onclick = () => {
+            isWhisperMode = !isWhisperMode;
+            if (isWhisperMode) {
+                whisperBtn.style.color = '#eab308';
+                whisperBtn.querySelector('i').className = 'ri-lock-unlock-line';
+                messageInput.style.background = '#FEF08A';
+                messageInput.style.border = '1px dashed #FACC15';
+                messageInput.placeholder = 'Modo Sussurro (Nota interna)...';
+            } else {
+                whisperBtn.style.color = 'var(--text-muted)';
+                whisperBtn.querySelector('i').className = 'ri-lock-line';
+                messageInput.style.background = '';
+                messageInput.style.border = '';
+                messageInput.placeholder = 'Digite uma mensagem...';
+            }
+        };
+    }
+
+    if (chatAssumeBtn) {
+        chatAssumeBtn.onclick = async () => {
+            if (!activeChatJid) return;
+            const user = JSON.parse(localStorage.getItem('user'));
+            if (!user) return;
+            try {
+                const resp = await fetch('/api/contacts/assign', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jid: activeChatJid, agent_id: user.id })
+                });
+                if (resp.ok) {
+                    fetchChats();
+                } else {
+                    alert('Erro ao assumir conversa.');
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        };
+    }
+
+    if (chatCloseBtn) {
+        chatCloseBtn.onclick = async () => {
+            if (!activeChatJid) return;
+            try {
+                const resp = await fetch('/api/contacts/assign', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jid: activeChatJid, agent_id: null })
+                });
+                if (resp.ok) {
+                    fetchChats();
+                } else {
+                    alert('Erro ao encerrar conversa.');
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        };
+    }
+
+    if (chatTransferBtn) {
+        chatTransferBtn.onclick = async () => {
+            if (!activeChatJid) return;
+            try {
+                const resp = await fetch('/api/admin/agents');
+                if (resp.ok) {
+                    const list = await resp.json();
+                    const select = document.getElementById('transfer-agent-select');
+                    select.innerHTML = '<option value="">Selecione o atendente de destino...</option>';
+                    const currentUser = JSON.parse(localStorage.getItem('user'));
+                    list.forEach(ag => {
+                        if (!currentUser || ag.id !== currentUser.id) {
+                            select.innerHTML += `<option value="${ag.id}">${ag.name} (${ag.email})</option>`;
+                        }
+                    });
+                    document.getElementById('modal-transfer-chat').style.display = 'flex';
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        };
+    }
+
+    const asideAssumeBtn = document.getElementById('aside-assume-btn');
+    if (asideAssumeBtn) asideAssumeBtn.onclick = () => chatAssumeBtn.click();
+
+    const asideTransferBtn = document.getElementById('aside-transfer-btn');
+    if (asideTransferBtn) asideTransferBtn.onclick = () => chatTransferBtn.click();
+
+    const asideCloseBtn = document.getElementById('aside-close-btn');
+    if (asideCloseBtn) asideCloseBtn.onclick = () => chatCloseBtn.click();
+
+    document.querySelectorAll('.modal-close-btn, .modal-cancel-btn, .modal-close-action-btn').forEach(btn => {
+        btn.onclick = () => {
+            document.querySelectorAll('.modal-overlay').forEach(m => m.style.display = 'none');
+        };
+    });
+
+    const formTransferChat = document.getElementById('form-transfer-chat');
+    if (formTransferChat) {
+        formTransferChat.onsubmit = async (e) => {
+            e.preventDefault();
+            const agentId = document.getElementById('transfer-agent-select').value;
+            const errorDiv = document.getElementById('transfer-chat-error');
+            errorDiv.style.display = 'none';
+
+            try {
+                const resp = await fetch('/api/contacts/transfer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ jid: activeChatJid, agent_id: agentId })
+                });
+                if (resp.ok) {
+                    document.getElementById('modal-transfer-chat').style.display = 'none';
+                    fetchChats();
+                } else {
+                    const data = await resp.json();
+                    errorDiv.innerText = data.error || 'Erro ao transferir.';
+                    errorDiv.style.display = 'block';
+                }
+            } catch (err) {
+                errorDiv.innerText = 'Erro de rede.';
+                errorDiv.style.display = 'block';
+            }
+        };
+    }
+
+    // --- ADMIN MODULES ---
+    async function fetchAdminInstances() {
+        try {
+            const resp = await fetch('/api/admin/instances');
+            if (resp.ok) {
+                const list = await resp.json();
+                const container = document.getElementById('admin-instances-list');
+                container.innerHTML = '';
+                if (list.length === 0) {
+                    container.innerHTML = '<div class="loading-state">Nenhuma instância cadastrada.</div>';
+                    return;
+                }
+                list.forEach(inst => {
+                    const item = document.createElement('div');
+                    item.className = 'file-item';
+                    item.style.display = 'flex';
+                    item.style.justifyContent = 'space-between';
+                    item.style.alignItems = 'center';
+                    item.style.padding = '12px 16px';
+                    item.style.background = 'var(--surface-subtle)';
+                    item.style.borderRadius = '8px';
+                    item.style.border = '1px solid var(--border-color)';
+                    
+                    const isConnected = inst.status === 'open' || inst.status === 'connected';
+                    const statusColor = isConnected ? '#22C55E' : '#EF4444';
+                    
+                    item.innerHTML = `
+                        <div style="display: flex; flex-direction: column; gap: 4px; text-align: left;">
+                            <span style="font-weight: 700; font-size: 15px; color: var(--text-main);">${inst.name}</span>
+                            <span style="font-size: 12px; color: var(--text-muted);">${inst.connection_jid || 'Sem número conectado'}</span>
+                            <div style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: ${statusColor};">
+                                <span style="width: 8px; height: 8px; border-radius: 50%; background: ${statusColor};"></span>
+                                <span>${inst.status.toUpperCase()}</span>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            ${!isConnected ? `<button class="btn-secondary btn-connect-inst" data-id="${inst.id}" data-name="${inst.name}" style="height: 32px; font-size: 12px;"><i class="ri-qr-code-line"></i> Conectar</button>` : ''}
+                            <button class="btn-danger-outline btn-delete-inst" data-id="${inst.id}" style="height: 32px; font-size: 12px;"><i class="ri-delete-bin-line"></i> Excluir</button>
+                        </div>
+                    `;
+                    container.appendChild(item);
+                });
+
+                container.querySelectorAll('.btn-connect-inst').forEach(btn => {
+                    btn.onclick = () => {
+                        const id = btn.getAttribute('data-id');
+                        const name = btn.getAttribute('data-name');
+                        connectInstanceQR(id, name);
+                    };
+                });
+
+                container.querySelectorAll('.btn-delete-inst').forEach(btn => {
+                    btn.onclick = () => {
+                        const id = btn.getAttribute('data-id');
+                        if (confirm('Tem certeza de que deseja excluir esta instância?')) {
+                            deleteInstance(id);
+                        }
+                    };
+                });
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    let qrInterval = null;
+    function connectInstanceQR(id, name) {
+        document.getElementById('connect-modal-title').innerText = `Conectar ${name}`;
+        const qrContainer = document.getElementById('qr-container');
+        qrContainer.innerHTML = '<div class="loading-state">Gerando QR Code...</div>';
+        document.getElementById('modal-connect-instance').style.display = 'flex';
+        
+        let attempts = 0;
+        if (qrInterval) clearInterval(qrInterval);
+        
+        const loadQR = async () => {
+            try {
+                const resp = await fetch(`/api/admin/instances/${id}/qrcode`);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.status === 'connected' || data.status === 'open') {
+                        qrContainer.innerHTML = '<div style="color: #22C55E; font-weight: 700;"><i class="ri-checkbox-circle-line" style="font-size: 48px;"></i><br>WhatsApp Conectado!</div>';
+                        document.getElementById('connect-status-text').innerText = 'Status: Conectado';
+                        clearInterval(qrInterval);
+                        fetchAdminInstances();
+                        return;
+                    }
+                    if (data.qrcode) {
+                        qrContainer.innerHTML = `<img src="${data.qrcode}" style="width: 220px; height: 220px; object-fit: contain;">`;
+                        document.getElementById('connect-status-text').innerText = 'Status: Aguardando leitura...';
+                    }
+                }
+            } catch (err) {
+                console.error(err);
+            }
+            attempts++;
+            if (attempts > 30) {
+                clearInterval(qrInterval);
+                qrContainer.innerHTML = '<div style="color: #EF4444;">Tempo expirado. Feche e tente novamente.</div>';
+            }
+        };
+
+        loadQR();
+        qrInterval = setInterval(loadQR, 4000);
+    }
+
+    const modalConnectInstance = document.getElementById('modal-connect-instance');
+    if (modalConnectInstance) {
+        const closeBtns = modalConnectInstance.querySelectorAll('.modal-close-btn, .modal-close-action-btn');
+        closeBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (qrInterval) {
+                    clearInterval(qrInterval);
+                    qrInterval = null;
+                }
+            });
+        });
+    }
+
+    async function deleteInstance(id) {
+        try {
+            const resp = await fetch(`/api/admin/instances/${id}`, { method: 'DELETE' });
+            if (resp.ok) {
+                fetchAdminInstances();
+                fetchInstancesList();
+            } else {
+                alert('Falha ao excluir.');
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    const btnOpenCreateInstance = document.getElementById('btn-open-create-instance-modal');
+    if (btnOpenCreateInstance) {
+        btnOpenCreateInstance.onclick = () => {
+            document.getElementById('form-create-instance').reset();
+            document.getElementById('create-instance-error').style.display = 'none';
+            document.getElementById('modal-create-instance').style.display = 'flex';
+        };
+    }
+
+    const formCreateInstance = document.getElementById('form-create-instance');
+    if (formCreateInstance) {
+        formCreateInstance.onsubmit = async (e) => {
+            e.preventDefault();
+            const name = document.getElementById('inst-name').value.trim();
+            const token = document.getElementById('inst-token').value.trim();
+            const errorDiv = document.getElementById('create-instance-error');
+            errorDiv.style.display = 'none';
+
+            try {
+                const resp = await fetch('/api/admin/instances', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, token })
+                });
+                if (resp.ok) {
+                    document.getElementById('modal-create-instance').style.display = 'none';
+                    fetchAdminInstances();
+                    fetchInstancesList();
+                } else {
+                    const data = await resp.json();
+                    errorDiv.innerText = data.error || 'Erro ao cadastrar.';
+                    errorDiv.style.display = 'block';
+                }
+            } catch (err) {
+                errorDiv.innerText = 'Erro de rede.';
+                errorDiv.style.display = 'block';
+            }
+        };
+    }
+
+    async function fetchAdminAgents() {
+        try {
+            const resp = await fetch('/api/admin/agents');
+            if (resp.ok) {
+                const list = await resp.json();
+                const container = document.getElementById('admin-agents-list');
+                container.innerHTML = '';
+                if (list.length === 0) {
+                    container.innerHTML = '<div class="loading-state">Nenhum atendente cadastrado.</div>';
+                    return;
+                }
+                list.forEach(ag => {
+                    const item = document.createElement('div');
+                    item.className = 'file-item';
+                    item.style.display = 'flex';
+                    item.style.justifyContent = 'space-between';
+                    item.style.alignItems = 'center';
+                    item.style.padding = '12px 16px';
+                    item.style.background = 'var(--surface-subtle)';
+                    item.style.borderRadius = '8px';
+                    item.style.border = '1px solid var(--border-color)';
+
+                    item.innerHTML = `
+                        <div style="display: flex; flex-direction: column; gap: 4px; text-align: left;">
+                            <span style="font-weight: 700; font-size: 15px; color: var(--text-main);">${ag.name}</span>
+                            <span style="font-size: 12px; color: var(--text-muted);">${ag.email}</span>
+                            <span style="font-size: 11px; font-weight: 600; color: var(--primary-orange);">${ag.role === 'admin' ? 'ADMINISTRADOR' : 'ATENDENTE'}</span>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <button class="btn-secondary btn-edit-agent" data-id="${ag.id}" style="height: 32px; font-size: 12px;"><i class="ri-edit-line"></i> Editar</button>
+                            <button class="btn-danger-outline btn-delete-agent" data-id="${ag.id}" style="height: 32px; font-size: 12px;"><i class="ri-delete-bin-line"></i> Excluir</button>
+                        </div>
+                    `;
+                    container.appendChild(item);
+                });
+
+                container.querySelectorAll('.btn-edit-agent').forEach(btn => {
+                    btn.onclick = async () => {
+                        const id = btn.getAttribute('data-id');
+                        editAgent(id);
+                    };
+                });
+
+                container.querySelectorAll('.btn-delete-agent').forEach(btn => {
+                    btn.onclick = () => {
+                        const id = btn.getAttribute('data-id');
+                        if (confirm('Deseja excluir este atendente?')) {
+                            deleteAgent(id);
+                        }
+                    };
+                });
+            }
+        } catch (err) {
+            console.error(err);
+        }
+    }
+
+    async function editAgent(id) {
+        try {
+            const resp = await fetch(`/api/admin/agents`);
+            if (resp.ok) {
+                const list = await resp.json();
+                const ag = list.find(x => x.id == id);
+                if (ag) {
+                    document.getElementById('agent-modal-title').innerText = 'Editar Atendente';
+                    document.getElementById('agent-id-edit').value = ag.id;
+                    document.getElementById('agent-name').value = ag.name;
+                    document.getElementById('agent-email').value = ag.email;
+                    document.getElementById('agent-password').value = '';
+                    document.getElementById('agent-role').value = ag.role;
+                    document.getElementById('create-agent-error').style.display = 'none';
+                    
+                    const checkboxes = document.querySelectorAll('input[name="agent-instances"]');
+                    checkboxes.forEach(cb => cb.checked = false);
+                    
+                    if (ag.instances) {
+                        ag.instances.forEach(instId => {
+                            const cb = document.querySelector(`input[name="agent-instances"][value="${instId}"]`);
+                            if (cb) cb.checked = true;
+                        });
+                    }
+                    
+                    document.getElementById('modal-create-agent').style.display = 'flex';
+                }
+            }
+        } catch(e) {
+            console.error(e);
+        }
+    }
+
+    async function deleteAgent(id) {
+        try {
+            const resp = await fetch(`/api/admin/agents/${id}`, { method: 'DELETE' });
+            if (resp.ok) {
+                fetchAdminAgents();
+            } else {
+                alert('Erro ao excluir atendente.');
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    const btnOpenCreateAgent = document.getElementById('btn-open-create-agent-modal');
+    if (btnOpenCreateAgent) {
+        btnOpenCreateAgent.onclick = () => {
+            document.getElementById('agent-modal-title').innerText = 'Novo Atendente';
+            document.getElementById('form-create-agent').reset();
+            document.getElementById('agent-id-edit').value = '';
+            document.getElementById('create-agent-error').style.display = 'none';
+            document.getElementById('modal-create-agent').style.display = 'flex';
+        };
+    }
+
+    const formCreateAgent = document.getElementById('form-create-agent');
+    if (formCreateAgent) {
+        formCreateAgent.onsubmit = async (e) => {
+            e.preventDefault();
+            const id = document.getElementById('agent-id-edit').value;
+            const name = document.getElementById('agent-name').value.trim();
+            const email = document.getElementById('agent-email').value.trim();
+            const password = document.getElementById('agent-password').value;
+            const role = document.getElementById('agent-role').value;
+            const errorDiv = document.getElementById('create-agent-error');
+            errorDiv.style.display = 'none';
+
+            const selectedInstances = [];
+            document.querySelectorAll('input[name="agent-instances"]:checked').forEach(cb => {
+                selectedInstances.push(parseInt(cb.value));
+            });
+
+            const method = id ? 'PUT' : 'POST';
+            const url = id ? `/api/admin/agents/${id}` : '/api/admin/agents';
+
+            try {
+                const resp = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, email, password, role, instances: selectedInstances })
+                });
+                if (resp.ok) {
+                    document.getElementById('modal-create-agent').style.display = 'none';
+                    fetchAdminAgents();
+                } else {
+                    const data = await resp.json();
+                    errorDiv.innerText = data.error || 'Erro ao salvar.';
+                    errorDiv.style.display = 'block';
+                }
+            } catch (err) {
+                errorDiv.innerText = 'Erro de rede.';
+                errorDiv.style.display = 'block';
+            }
+        };
+    }
+
+    async function fetchInstancesList() {
+        try {
+            const response = await fetch('/api/admin/instances');
+            if (response.ok) {
+                const list = await response.json();
+                const select = document.getElementById('filter-instance-select');
+                if (select) {
+                    const selectedVal = select.value;
+                    select.innerHTML = '<option value="all">Todas as Instâncias</option>';
+                    list.forEach(inst => {
+                        select.innerHTML += `<option value="${inst.id}">${inst.name}</option>`;
+                    });
+                    select.value = selectedVal;
+                }
+                
+                const checkboxContainer = document.getElementById('agent-instances-checkboxes');
+                if (checkboxContainer) {
+                    checkboxContainer.innerHTML = '';
+                    list.forEach(inst => {
+                        checkboxContainer.innerHTML += `
+                            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px;">
+                                <input type="checkbox" name="agent-instances" value="${inst.id}">
+                                <span>${inst.name}</span>
+                            </label>
+                        `;
+                    });
+                }
+            }
+        } catch (err) {
+            console.log('Error fetching instances list:', err);
+        }
+    }
+
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) {
+        loginForm.onsubmit = async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+            const errorDiv = document.getElementById('login-error');
+            
+            errorDiv.style.display = 'none';
+            
+            try {
+                const response = await originalFetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                if (response.ok) {
+                    localStorage.setItem('token', data.token);
+                    localStorage.setItem('user', JSON.stringify(data.user));
+                    checkAuth();
+                } else {
+                    errorDiv.innerText = data.error || 'Erro ao fazer login';
+                    errorDiv.style.display = 'block';
+                }
+            } catch (err) {
+                errorDiv.innerText = 'Erro de conexão com o servidor';
+                errorDiv.style.display = 'block';
+            }
+        };
+    }
+    
+    const logoutBtn = document.getElementById('logout-btn');
+    if (logoutBtn) {
+        logoutBtn.onclick = async () => {
+            try {
+                await fetch('/api/auth/logout', { method: 'POST' });
+            } catch(e) {}
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+            checkAuth();
+        };
+    }
+
     // Initial load
     loadSettings();
-    startPolling();
-    fetchInstanceStatus();
+    checkAuth();
     fetchContactGroups();
-    setInterval(fetchInstanceStatus, 10000); // Check status every 10s
+    fetchInstanceStatus();
+    setInterval(fetchInstanceStatus, 15000);
 });

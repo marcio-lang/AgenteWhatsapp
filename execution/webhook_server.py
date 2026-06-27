@@ -9,6 +9,9 @@ import datetime
 import threading
 import csv
 import io
+import jwt
+import bcrypt
+import functools
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -16,9 +19,9 @@ load_dotenv()
 # Configuração de Backend (SQLite vs Postgres)
 USE_POSTGRES = os.getenv("USE_POSTGRES", "0") == "1"
 if USE_POSTGRES:
-    from database_pg import init_db, save_message, update_contact, get_all_chats, get_chat_history, get_message_by_id, mark_as_read, get_metrics, get_all_contacts_from_db, is_message_processed, list_contact_groups, create_contact_group, rename_contact_group, delete_contact_group, add_group_members, get_group_members, remove_group_members, list_flows, get_active_flow, create_flow, rename_flow, set_active_flow, delete_flow, list_flow_rules, create_flow_rule, update_flow_rule, delete_flow_rule
+    from database_pg import *
 else:
-    from database import init_db, save_message, update_contact, get_all_chats, get_chat_history, get_message_by_id, mark_as_read, get_metrics, get_all_contacts_from_db, is_message_processed, list_contact_groups, create_contact_group, rename_contact_group, delete_contact_group, add_group_members, get_group_members, remove_group_members, list_flows, get_active_flow, create_flow, rename_flow, set_active_flow, delete_flow, list_flow_rules, create_flow_rule, update_flow_rule, delete_flow_rule
+    from database import *
 
 # Configuração de Fila (Redis vs Threads)
 USE_REDIS_QUEUE = os.getenv("USE_REDIS_QUEUE", "0") == "1"
@@ -38,11 +41,25 @@ if USE_REDIS_QUEUE:
 
 from constants import *
 from logger import log_message
+from flask_socketio import SocketIO, emit
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = os.getenv("JWT_SECRET", "super-secret-key-whatsapp-atendimento")
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
 client = EvolutionClient()
 try:
     init_db()
+    # Create default admin if no agents exist
+    def create_default_admin():
+        try:
+            agents = get_all_agents()
+            if not agents:
+                pwd_hash = bcrypt.hashpw(b"admin", bcrypt.gensalt()).decode('utf-8')
+                create_agent("Administrador", "admin@admin.com", pwd_hash, role="admin")
+                print("Default admin user created: admin@admin.com / admin")
+        except Exception as ex:
+            print(f"Error creating default admin: {ex}")
+    create_default_admin()
 except Exception as e:
     print(f"DB init failed: {e}")
 
@@ -166,6 +183,268 @@ def _process_message_async(target_number, message_content):
     except Exception as e:
         log_message(f"Error processing message async: {e}")
 
+# --- MULTI-ATENDIMENTO JWT AND ADMIN ENDPOINTS ---
+
+def token_required(f):
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        token = None
+        if 'Authorization' in request.headers:
+            auth_header = request.headers['Authorization']
+            try:
+                if "Bearer " in auth_header:
+                    token = auth_header.split(" ")[1]
+                else:
+                    token = auth_header
+            except IndexError:
+                return jsonify({'error': 'Invalid token format'}), 401
+                
+        if not token:
+            return jsonify({'error': 'Token is missing'}), 401
+            
+        try:
+            data = jwt.decode(token, app.config['SECRET_KEY'], algorithms=["HS256"])
+            current_user = get_agent_by_id(data['id'])
+            if not current_user:
+                return jsonify({'error': 'User not found'}), 401
+        except jwt.ExpiredSignatureError:
+            return jsonify({'error': 'Token has expired'}), 401
+        except jwt.InvalidTokenError:
+            return jsonify({'error': 'Invalid token'}), 401
+            
+        return f(current_user, *args, **kwargs)
+    return decorated
+
+def admin_required(f):
+    @functools.wraps(f)
+    def decorated(current_user, *args, **kwargs):
+        if current_user.get('role') != 'admin':
+            return jsonify({'error': 'Admin permission required'}), 403
+        return f(current_user, *args, **kwargs)
+    return decorated
+
+@app.route('/api/auth/login', methods=['POST'])
+def api_login():
+    data = request.get_json() or {}
+    email = data.get('email')
+    password = data.get('password')
+    
+    if not email or not password:
+        return jsonify({'error': 'Email e senha são obrigatórios'}), 400
+        
+    agent = get_agent_by_email(email)
+    if not agent:
+        return jsonify({'error': 'Credenciais inválidas'}), 401
+        
+    # Check password
+    if not bcrypt.checkpw(password.encode('utf-8'), agent['password_hash'].encode('utf-8')):
+        return jsonify({'error': 'Credenciais inválidas'}), 401
+        
+    # Generate token (expires in 24 hours)
+    token = jwt.encode({
+        'id': agent['id'],
+        'email': agent['email'],
+        'role': agent['role'],
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24)
+    }, app.config['SECRET_KEY'], algorithm="HS256")
+    
+    # Update agent status to online
+    update_agent(agent['id'], status='online')
+    
+    return jsonify({
+        'token': token,
+        'user': {
+            'id': agent['id'],
+            'name': agent['name'],
+            'email': agent['email'],
+            'role': agent['role'],
+            'status': 'online'
+        }
+    }), 200
+
+@app.route('/api/auth/logout', methods=['POST'])
+@token_required
+def api_logout(current_user):
+    update_agent(current_user['id'], status='offline')
+    return jsonify({'status': 'success'}), 200
+
+@app.route('/api/auth/me', methods=['GET'])
+@token_required
+def api_me(current_user):
+    return jsonify({
+        'user': {
+            'id': current_user['id'],
+            'name': current_user['name'],
+            'email': current_user['email'],
+            'role': current_user['role'],
+            'status': current_user['status']
+        }
+    }), 200
+
+# Agent Management Endpoints
+@app.route('/api/admin/agents', methods=['GET'])
+@token_required
+@admin_required
+def api_list_agents(current_user):
+    agents = get_all_agents()
+    for agent in agents:
+        agent['instances'] = get_agent_instances(agent['id'])
+    return jsonify(agents), 200
+
+@app.route('/api/admin/agents', methods=['POST'])
+@token_required
+@admin_required
+def api_create_agent(current_user):
+    data = request.get_json() or {}
+    name = data.get('name')
+    email = data.get('email')
+    password = data.get('password')
+    role = data.get('role', 'agent')
+    
+    if not name or not email or not password:
+        return jsonify({'error': 'Nome, email e senha são obrigatórios'}), 400
+        
+    if get_agent_by_email(email):
+        return jsonify({'error': 'Email já cadastrado'}), 409
+        
+    pwd_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    agent_id = create_agent(name, email, pwd_hash, role)
+    if agent_id:
+        instances = data.get('instances', [])
+        for inst_id in instances:
+            link_agent_instance(agent_id, inst_id)
+            
+        return jsonify({
+            'id': agent_id,
+            'name': name,
+            'email': email,
+            'role': role
+        }), 201
+    return jsonify({'error': 'Erro ao criar atendente'}), 500
+
+@app.route('/api/admin/agents/<int:agent_id>', methods=['PUT', 'DELETE'])
+@token_required
+@admin_required
+def api_manage_agent(current_user, agent_id):
+    if request.method == 'DELETE':
+        delete_agent(agent_id)
+        return jsonify({'status': 'success'}), 200
+        
+    data = request.get_json() or {}
+    name = data.get('name')
+    email = data.get('email')
+    password = data.get('password')
+    role = data.get('role')
+    
+    pwd_hash = None
+    if password:
+        pwd_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        
+    update_agent(agent_id, name, email, pwd_hash, role)
+    
+    if 'instances' in data:
+        linked = get_agent_instances(agent_id)
+        for l in linked:
+            unlink_agent_instance(agent_id, l['id'])
+        for inst_id in data['instances']:
+            link_agent_instance(agent_id, inst_id)
+            
+    return jsonify({'status': 'success'}), 200
+
+# Instance Management Endpoints
+@app.route('/api/admin/instances', methods=['GET'])
+@token_required
+@admin_required
+def api_list_instances(current_user):
+    instances = get_all_instances()
+    local_client = EvolutionClient()
+    for inst in instances:
+        local_client.instance_name = inst['name']
+        try:
+            status = local_client.get_instance_status()
+            state = (status.get('instance') or {}).get('state', 'close')
+            update_instance_status(inst['name'], state)
+            inst['status'] = state
+        except Exception:
+            inst['status'] = 'close'
+    return jsonify(instances), 200
+
+@app.route('/api/admin/instances', methods=['POST'])
+@token_required
+@admin_required
+def api_create_instance(current_user):
+    data = request.get_json() or {}
+    name = data.get('name')
+    token = data.get('token')
+    
+    if not name:
+        return jsonify({'error': 'Nome da instância é obrigatório'}), 400
+        
+    name = secure_filename(name).lower()
+    if not name:
+        return jsonify({'error': 'Nome da instância inválido'}), 400
+        
+    if get_instance_by_name(name):
+        return jsonify({'error': 'Instância já cadastrada'}), 409
+        
+    local_client = EvolutionClient()
+    res = local_client.create_evolution_instance(name, token)
+    
+    if 'hash' not in res and 'instance' not in res and res.get('status') == 'error':
+        return jsonify({'error': f"Erro na Evolution API: {res.get('message')}"}), 500
+        
+    returned_token = ((res.get('instance') or {}).get('token') or res.get('hash') or {}).get('token') or token or ""
+    
+    inst_id = create_instance(name, returned_token, 'close')
+    if not inst_id:
+        return jsonify({'error': 'Erro ao salvar no banco de dados'}), 500
+        
+    webhook_url = f"http://{request.host}/webhook"
+    local_client.set_evolution_webhook(name, webhook_url)
+    
+    return jsonify({
+        'id': inst_id,
+        'name': name,
+        'token': returned_token,
+        'status': 'close'
+    }), 201
+
+@app.route('/api/admin/instances/<int:instance_id>', methods=['DELETE'])
+@token_required
+@admin_required
+def api_delete_instance(current_user, instance_id):
+    inst = get_instance_by_id(instance_id)
+    if not inst:
+        return jsonify({'error': 'Instância não encontrada'}), 404
+        
+    local_client = EvolutionClient()
+    local_client.delete_evolution_instance(inst['name'])
+    delete_instance(instance_id)
+    return jsonify({'status': 'success'}), 200
+
+@app.route('/api/admin/instances/<name>/connect', methods=['GET'])
+@token_required
+def api_connect_instance(current_user, name):
+    inst = get_instance_by_name(name)
+    if not inst:
+        return jsonify({'error': 'Instância não encontrada'}), 404
+        
+    if current_user.get('role') != 'admin':
+        linked_instances = get_agent_instances(current_user['id'])
+        if not any(li['name'] == name for li in linked_instances):
+            return jsonify({'error': 'Acesso negado para esta instância'}), 403
+            
+    local_client = EvolutionClient()
+    local_client.instance_name = name
+    
+    try:
+        url = f"{local_client.base_url}/instance/connect/{name}"
+        response = local_client.session.get(url, headers=local_client.headers, timeout=15)
+        res_json = response.json()
+        return jsonify(res_json), response.status_code
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json or {}
@@ -173,17 +452,22 @@ def webhook():
         with open("last_webhook.json", "w", encoding="utf-8") as f:
             json.dump(_redact_webhook_payload(data), f, indent=2, ensure_ascii=False)
 
-    # Evolution API structure often resembles:
-    # { "event": "messages.upsert", "data": { "key": {"remoteJid": "..."}, "message": {...} } }
-    # OR sometimes simplified depending on version.
-    
-    # We look for 'data' key usually
+    instance_name = data.get('instance') or data.get('instanceName') or data.get('instance_name')
+    instance_id = None
+    if instance_name:
+        inst_details = get_instance_by_name(instance_name)
+        if inst_details:
+            instance_id = inst_details['id']
+            if inst_details['status'] != 'open':
+                update_instance_status(instance_name, 'open')
+        else:
+            instance_id = create_instance(instance_name, "", "open")
+
     event_data = data.get('data')
     if not event_data:
-        # Sometimes it's directly in the root or 'message'
         event_data = data
         
-    print(f"Processing event_data keys: {list(event_data.keys())}")
+    print(f"Processing event_data keys: {list(event_data.keys())} for instance {instance_name}")
 
     # SAFEGUARD: Only process 'messages.upsert' events for AutoResponder
     event_type = data.get('event')
@@ -212,11 +496,7 @@ def webhook():
     
     log_message(f"Incoming: JID={remote_jid}, Sender={sender_num}, FromMe={from_me}")
 
-    if from_me:
-         log_message("Ignored: fromMe=True")
-         return jsonify({"status": "ignored", "reason": "fromMe"}), 200
-
-    if sender_num is None:
+    if sender_num is None and not from_me:
         log_message("Ignored: sender=None (likely bot's own message)")
         return jsonify({"status": "ignored", "reason": "no_sender"}), 200
     
@@ -304,19 +584,41 @@ def webhook():
             metadata['jpegThumbnail'] = vm.get('jpegThumbnail')
     
     # Save/Update Contact
-    update_contact(target_number, push_name=push_name)
+    update_contact(target_number, push_name=push_name, instance_id=instance_id)
     
     # Save Message
     db_content = raw_message_content if raw_message_content else (f"[{msg_type}]" if msg_type != 'text' else "")
     save_message(
         msg_id=msg_id,
         jid=target_number,
-        sender=target_number,
+        sender="bot" if from_me else target_number,
         content=db_content,
         msg_type=msg_type,
         metadata=metadata,
-        from_me=0
+        from_me=1 if from_me else 0,
+        instance_id=instance_id
     )
+
+    # Broadcast message via WebSocket
+    try:
+        socketio.emit('new_message', {
+            'id': msg_id,
+            'jid': target_number,
+            'sender': "bot" if from_me else target_number,
+            'content': db_content,
+            'type': msg_type,
+            'metadata': metadata,
+            'timestamp': datetime.datetime.now().isoformat(),
+            'from_me': bool(from_me),
+            'is_read': True if from_me else False,
+            'instance_id': instance_id,
+            'is_internal': False
+        })
+    except Exception as socket_err:
+        print(f"WebSocket emit failed: {socket_err}")
+
+    if from_me:
+        return jsonify({"status": "accepted", "reason": "outgoing_logged"}), 200
 
     if not message_content and msg_type == 'text':
         log_message("Ignored: No text content for routing")
@@ -325,24 +627,63 @@ def webhook():
     if USE_REDIS_QUEUE and redis_queue:
         try:
             from tasks import process_message_task
-            redis_queue.enqueue(process_message_task, target_number, message_content)
+            redis_queue.enqueue(process_message_task, target_number, message_content, instance_id)
             log_message(f"Enqueued message for {target_number} to Redis")
         except Exception as e:
             log_message(f"Redis enqueue failed: {e}. Falling back to Thread.")
             from tasks import process_message_task
-            threading.Thread(target=process_message_task, args=(target_number, message_content), daemon=True).start()
+            threading.Thread(target=process_message_task, args=(target_number, message_content, instance_id), daemon=True).start()
     else:
         from tasks import process_message_task
-        threading.Thread(target=process_message_task, args=(target_number, message_content), daemon=True).start()
+        threading.Thread(target=process_message_task, args=(target_number, message_content, instance_id), daemon=True).start()
 
     return jsonify({"status": "accepted"}), 200
 
 # -- DASHBOARD API ENDPOINTS --
 
 @app.route('/api/chats', methods=['GET'])
-def api_get_chats():
+@token_required
+def api_get_chats(current_user):
+    instance_id = request.args.get('instance_id')
+    assigned_to = request.args.get('assigned_to')
+    
+    # Fetch all chats
     chats = get_all_chats()
-    return jsonify(chats), 200
+    
+    # Determine agent linked instances
+    linked_ids = None
+    if current_user.get('role') != 'admin':
+        linked_instances = get_agent_instances(current_user['id'])
+        linked_ids = [li['id'] for li in linked_instances]
+        
+    filtered_chats = []
+    for c in chats:
+        c_inst_id = c.get('instance_id')
+        
+        # 1. Filter by instance
+        if linked_ids is not None:
+            if c_inst_id not in linked_ids:
+                continue
+        if instance_id and instance_id != 'all':
+            if str(c_inst_id) != str(instance_id):
+                continue
+                
+        # 2. Filter by assignment
+        c_assigned = c.get('assigned_to')
+        if assigned_to == 'me':
+            if c_assigned != current_user['id']:
+                continue
+        elif assigned_to == 'unassigned':
+            if c_assigned is not None:
+                continue
+        elif current_user.get('role') != 'admin':
+            # Standard agent: only see assigned to them or unassigned
+            if c_assigned is not None and c_assigned != current_user['id']:
+                continue
+                
+        filtered_chats.append(c)
+        
+    return jsonify(filtered_chats), 200
 
 @app.route('/api/contacts', methods=['GET'])
 def api_get_contacts():
@@ -696,14 +1037,31 @@ def api_bootstrap_default_flow():
         return jsonify({"error": str(e)}), 400
 
 @app.route('/api/messages/<jid>', methods=['GET'])
-def api_get_messages(jid):
+@token_required
+def api_get_messages(current_user, jid):
+    # Verify permission: check if agent is allowed to access this contact's chats
+    if current_user.get('role') != 'admin':
+        # Find contact to get instance_id
+        contact = None
+        contacts_list = get_all_contacts_from_db()
+        for c in contacts_list:
+            if c['jid'] == jid:
+                contact = c
+                break
+        if contact:
+            c_inst_id = contact.get('instance_id')
+            linked_instances = get_agent_instances(current_user['id'])
+            linked_ids = [li['id'] for li in linked_instances]
+            if c_inst_id not in linked_ids:
+                return jsonify({'error': 'Acesso negado para este chat'}), 403
+
     history = get_chat_history(jid)
-    # Automatically mark as read when fetching history
     mark_as_read(jid)
     return jsonify(history), 200
 
 @app.route('/api/read/<jid>', methods=['POST'])
-def api_mark_read(jid):
+@token_required
+def api_mark_read(current_user, jid):
     mark_as_read(jid)
     return jsonify({"status": "success"}), 200
 
@@ -763,10 +1121,12 @@ def api_get_media(msg_id):
     return jsonify({"url": f"data:{mimetype};base64,{candidate}", "source": "evolution"}), 200
 
 @app.route('/api/send', methods=['POST'])
-def api_send_message():
-    data = request.json
+@token_required
+def api_send_message(current_user):
+    data = request.json or {}
     jid = data.get('jid')
     text = data.get('text')
+    is_internal = bool(data.get('is_internal', False))
     
     if not jid or not text:
         return jsonify({"error": "Missing jid or text"}), 400
@@ -774,8 +1134,69 @@ def api_send_message():
     jid = _normalize_jid(jid)
     if not _is_valid_jid(jid):
         return jsonify({"error": "Invalid jid", "jid": jid}), 400
-    
+        
+    instance_id = None
+    instance_name = None
+    contact = None
+    contacts_list = get_all_contacts_from_db()
+    for c in contacts_list:
+        if c['jid'] == jid:
+            contact = c
+            break
+            
+    if contact and contact.get('instance_id'):
+        instance_id = contact['instance_id']
+        inst_details = get_instance_by_id(instance_id)
+        if inst_details:
+            instance_name = inst_details['name']
+            
+    if not instance_name:
+        instances = get_all_instances()
+        if instances:
+            instance_name = instances[0]['name']
+            instance_id = instances[0]['id']
+        else:
+            instance_name = EvolutionClient().instance_name
+            inst_details = get_instance_by_name(instance_name)
+            if inst_details:
+                instance_id = inst_details['id']
+            else:
+                instance_id = create_instance(instance_name, "", "open")
+                
+    if is_internal:
+        msg_id = 'whisper_' + str(datetime.datetime.now().timestamp())
+        save_message(
+            msg_id=msg_id,
+            jid=jid,
+            sender=current_user['name'],
+            content=text,
+            from_me=1,
+            instance_id=instance_id,
+            is_internal=1
+        )
+        
+        try:
+            socketio.emit('new_message', {
+                'id': msg_id,
+                'jid': jid,
+                'sender': current_user['name'],
+                'content': text,
+                'type': 'text',
+                'metadata': {},
+                'timestamp': datetime.datetime.now().isoformat(),
+                'from_me': True,
+                'is_read': True,
+                'instance_id': instance_id,
+                'is_internal': True
+            })
+        except Exception as socket_err:
+            print(f"WebSocket emit failed: {socket_err}")
+            
+        return jsonify({"status": "success", "response": {"message": "Sussurro salvo"}}), 200
+        
     local_client = EvolutionClient()
+    local_client.instance_name = instance_name
+    
     resp = local_client.send_text(jid, text)
     if not resp or not isinstance(resp, dict):
         return jsonify({"status": "error", "response": resp}), 502
@@ -783,40 +1204,40 @@ def api_send_message():
         return jsonify({"status": "error", "response": resp}), 400
     if "key" not in resp:
         return jsonify({"status": "error", "response": resp}), 502
-    
-    # Save outgoing message to DB
+        
     msg_id = resp.get('key', {}).get('id') if resp else 'out_' + str(datetime.datetime.now().timestamp())
     save_message(
         msg_id=msg_id,
         jid=jid,
         sender="bot",
         content=text,
-        from_me=1
+        from_me=1,
+        instance_id=instance_id,
+        is_internal=0
     )
     
+    try:
+        socketio.emit('new_message', {
+            'id': msg_id,
+            'jid': jid,
+            'sender': "bot",
+            'content': text,
+            'type': 'text',
+            'metadata': {},
+            'timestamp': datetime.datetime.now().isoformat(),
+            'from_me': True,
+            'is_read': True,
+            'instance_id': instance_id,
+            'is_internal': False
+        })
+    except Exception as socket_err:
+        print(f"WebSocket emit failed: {socket_err}")
+        
     return jsonify({"status": "success", "response": resp}), 200
 
-def _normalize_jid(value):
-    if value is None:
-        return None
-    jid = str(value).strip()
-    if "@lid" not in jid and "@g.us" not in jid:
-        if "@" in jid:
-            user, domain = jid.split("@", 1)
-            user_digits = "".join([c for c in user if c.isdigit()])
-            if user_digits:
-                jid = f"{user_digits}@{domain}"
-        else:
-            user_digits = "".join([c for c in jid if c.isdigit()])
-            if user_digits:
-                jid = f"{user_digits}@s.whatsapp.net"
-    return jid
-
-def _is_valid_jid(jid):
-    return bool(jid) and (jid.endswith("@s.whatsapp.net") or jid.endswith("@lid") or jid.endswith("@g.us"))
-
 @app.route('/api/send/media', methods=['POST'])
-def api_send_media():
+@token_required
+def api_send_media(current_user):
     data = request.json or {}
     jid = data.get('jid')
     filename = data.get('filename')
@@ -840,7 +1261,37 @@ def api_send_media():
     ext = os.path.splitext(filename)[1].lower()
     media_type = "document" if ext == ".pdf" else "image"
 
+    instance_id = None
+    instance_name = None
+    contact = None
+    contacts_list = get_all_contacts_from_db()
+    for c in contacts_list:
+        if c['jid'] == jid:
+            contact = c
+            break
+            
+    if contact and contact.get('instance_id'):
+        instance_id = contact['instance_id']
+        inst_details = get_instance_by_id(instance_id)
+        if inst_details:
+            instance_name = inst_details['name']
+            
+    if not instance_name:
+        instances = get_all_instances()
+        if instances:
+            instance_name = instances[0]['name']
+            instance_id = instances[0]['id']
+        else:
+            instance_name = EvolutionClient().instance_name
+            inst_details = get_instance_by_name(instance_name)
+            if inst_details:
+                instance_id = inst_details['id']
+            else:
+                instance_id = create_instance(instance_name, "", "open")
+
     local_client = EvolutionClient()
+    local_client.instance_name = instance_name
+    
     resp = local_client.send_media_base64(jid, path, caption=caption, media_type=media_type)
     if not resp or not isinstance(resp, dict):
         return jsonify({"status": "error", "response": resp}), 502
@@ -858,10 +1309,106 @@ def api_send_media():
         content=local_url,
         msg_type=media_type,
         metadata={"filename": filename, "caption": caption, "local_url": local_url},
-        from_me=1
+        from_me=1,
+        instance_id=instance_id,
+        is_internal=0
     )
 
+    try:
+        socketio.emit('new_message', {
+            'id': msg_id,
+            'jid': jid,
+            'sender': "bot",
+            'content': local_url,
+            'type': media_type,
+            'metadata': {"filename": filename, "caption": caption, "local_url": local_url},
+            'timestamp': datetime.datetime.now().isoformat(),
+            'from_me': True,
+            'is_read': True,
+            'instance_id': instance_id,
+            'is_internal': False
+        })
+    except Exception as socket_err:
+        print(f"WebSocket emit failed: {socket_err}")
+
     return jsonify({"status": "success", "response": resp}), 200
+
+@app.route('/api/contacts/assign', methods=['POST'])
+@token_required
+def api_assign_contact(current_user):
+    data = request.json or {}
+    jid = data.get('jid')
+    agent_id = data.get('agent_id')
+    
+    if not jid:
+        return jsonify({"error": "Missing jid"}), 400
+        
+    if current_user.get('role') != 'admin':
+        if agent_id and int(agent_id) != current_user['id']:
+            return jsonify({"error": "Permissão negada"}), 403
+            
+    parsed_agent_id = None
+    if agent_id and str(agent_id).lower() not in ["unassigned", "", "0", "-1"]:
+        parsed_agent_id = int(agent_id)
+        
+    update_contact(jid, assigned_to=parsed_agent_id)
+    
+    try:
+        socketio.emit('contact_assigned', {
+            'jid': jid,
+            'assigned_to': parsed_agent_id
+        })
+    except Exception as socket_err:
+        print(f"WebSocket emit failed: {socket_err}")
+        
+    return jsonify({"status": "success"}), 200
+
+@app.route('/api/contacts/transfer', methods=['POST'])
+@token_required
+def api_transfer_contact(current_user):
+    data = request.json or {}
+    jid = data.get('jid')
+    target_agent_id = data.get('agent_id')
+    
+    if not jid or not target_agent_id:
+        return jsonify({"error": "Missing jid or agent_id"}), 400
+        
+    parsed_agent_id = int(target_agent_id)
+    
+    target_agent = get_agent_by_id(parsed_agent_id)
+    if not target_agent:
+        return jsonify({"error": "Atendente de destino não encontrado"}), 404
+        
+    update_contact(jid, assigned_to=parsed_agent_id)
+    
+    try:
+        socketio.emit('contact_assigned', {
+            'jid': jid,
+            'assigned_to': parsed_agent_id
+        })
+    except Exception as socket_err:
+        print(f"WebSocket emit failed: {socket_err}")
+        
+    return jsonify({"status": "success"}), 200
+
+def _normalize_jid(value):
+    if value is None:
+        return None
+    jid = str(value).strip()
+    if "@lid" not in jid and "@g.us" not in jid:
+        if "@" in jid:
+            user, domain = jid.split("@", 1)
+            user_digits = "".join([c for c in user if c.isdigit()])
+            if user_digits:
+                jid = f"{user_digits}@{domain}"
+        else:
+            user_digits = "".join([c for c in jid if c.isdigit()])
+            if user_digits:
+                jid = f"{user_digits}@s.whatsapp.net"
+    return jid
+
+def _is_valid_jid(jid):
+    return bool(jid) and (jid.endswith("@s.whatsapp.net") or jid.endswith("@lid") or jid.endswith("@g.us"))
 
 @app.route('/api/instance/status', methods=['GET'])
 def api_instance_status():
@@ -952,26 +1499,74 @@ def api_update_contact():
     return jsonify({"status": "success"}), 200
 
 @app.route('/api/contacts/avatar', methods=['POST'])
-def api_get_avatar():
-    data = request.json
+@token_required
+def api_get_avatar(current_user):
+    data = request.json or {}
     jid = data.get('jid')
     if not jid:
         return jsonify({"error": "Missing jid"}), 400
+        
+    instance_name = None
+    contact = None
+    contacts_list = get_all_contacts_from_db()
+    for c in contacts_list:
+        if c['jid'] == jid:
+            contact = c
+            break
+            
+    if contact and contact.get('instance_id'):
+        inst_details = get_instance_by_id(contact['instance_id'])
+        if inst_details:
+            instance_name = inst_details['name']
+            
+    if not instance_name:
+        instances = get_all_instances()
+        if instances:
+            instance_name = instances[0]['name']
+        else:
+            instance_name = EvolutionClient().instance_name
+            
+    local_client = EvolutionClient()
+    local_client.instance_name = instance_name
     
-    resp = client.fetch_profile_picture(jid)
+    resp = local_client.fetch_profile_picture(jid)
     if resp and isinstance(resp, dict) and resp.get("profilePictureUrl"):
         update_contact(jid, profile_pic=resp.get("profilePictureUrl"))
     return jsonify(resp), 200
 
 @app.route('/api/instance/presence', methods=['POST'])
-def api_send_presence():
-    data = request.json
+@token_required
+def api_send_presence(current_user):
+    data = request.json or {}
     jid = data.get('jid')
     presence = data.get('presence', 'composing')
     if not jid:
         return jsonify({"error": "Missing jid"}), 400
+        
+    instance_name = None
+    contact = None
+    contacts_list = get_all_contacts_from_db()
+    for c in contacts_list:
+        if c['jid'] == jid:
+            contact = c
+            break
+            
+    if contact and contact.get('instance_id'):
+        inst_details = get_instance_by_id(contact['instance_id'])
+        if inst_details:
+            instance_name = inst_details['name']
+            
+    if not instance_name:
+        instances = get_all_instances()
+        if instances:
+            instance_name = instances[0]['name']
+        else:
+            instance_name = EvolutionClient().instance_name
+            
+    local_client = EvolutionClient()
+    local_client.instance_name = instance_name
     
-    resp = client.send_presence(jid, presence)
+    resp = local_client.send_presence(jid, presence)
     return jsonify(resp), 200
 
 # -- FILE MANAGER API --
@@ -1079,8 +1674,8 @@ def serve_static(path):
     return send_from_directory('../frontend', path)
 
 if __name__ == '__main__':
-    print("Starting Webhook Server on port 3000 (0.0.0.0)...")
+    print("Starting Webhook Server with WebSockets...")
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", "3000"))
     debug = os.getenv("FLASK_DEBUG") == "1"
-    app.run(host=host, port=port, debug=debug)
+    socketio.run(app, host=host, port=port, debug=debug, allow_unsafe_werkzeug=True)

@@ -347,3 +347,61 @@ class EvolutionClient:
         except Exception as e:
             log_message(f"Error sending presence to {jid}: {e}")
             return None
+
+    def create_evolution_instance(self, name, token=None):
+        """Creates a WhatsApp instance in Evolution API."""
+        url = f"{self.base_url}/instance/create"
+        payload = {
+            "instanceName": name,
+            "token": token or "",
+            "number": "",
+            "qrcode": True,
+            "integration": "WHATSAPP-BAILEYS"
+        }
+        try:
+            response = self.session.post(url, json=payload, headers=self.headers, timeout=20)
+            return response.json()
+        except Exception as e:
+            log_message(f"Error creating evolution instance: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def delete_evolution_instance(self, name):
+        """Deletes a WhatsApp instance from Evolution API."""
+        url = f"{self.base_url}/instance/delete/{name}"
+        try:
+            response = self.session.delete(url, headers=self.headers, timeout=20)
+            return response.json()
+        except Exception as e:
+            log_message(f"Error deleting evolution instance: {e}")
+            return {"status": "error", "message": str(e)}
+
+    def set_evolution_webhook(self, name, webhook_url):
+        """Sets the webhook on a WhatsApp instance in Evolution API."""
+        url = f"{self.base_url}/webhook/set/{name}"
+        payload = {
+            "enabled": True,
+            "url": webhook_url,
+            "webhook_by_events": False,
+            "events": [
+                "APPLICATION_STARTUP",
+                "QRCODE_UPDATED",
+                "MESSAGES_SET",
+                "MESSAGES_UPSERT",
+                "MESSAGES_UPDATE",
+                "SEND_MESSAGE",
+                "CONTACTS_SET",
+                "CONTACTS_UPSERT",
+                "CONTACTS_UPDATE",
+                "PRESENCE_UPDATE",
+                "CHATS_SET",
+                "CHATS_UPSERT",
+                "CHATS_UPDATE",
+                "CONNECTION_UPDATE"
+            ]
+        }
+        try:
+            response = self.session.post(url, json=payload, headers=self.headers, timeout=15)
+            return response.json()
+        except Exception as e:
+            log_message(f"Error setting webhook: {e}")
+            return {"status": "error", "message": str(e)}

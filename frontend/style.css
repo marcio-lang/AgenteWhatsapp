@@ -2506,3 +2506,130 @@ body.atendimento-view .send-button:hover {
   margin-top: 16px;
 }
 
+/* --- MULTI-ATENDIMENTO MODALS & WHISPERS STYLING --- */
+
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(4px);
+  justify-content: center;
+  align-items: center;
+  z-index: 9000;
+  animation: fadeIn 0.2s ease forwards;
+}
+
+.modal-card {
+  background: var(--sidebar-bg);
+  color: var(--text-main);
+  padding: 24px;
+  border-radius: var(--radius-md, 14px);
+  width: 100%;
+  max-width: 500px;
+  box-shadow: var(--shadow-lg);
+  border: var(--glass-border);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 12px;
+}
+
+.modal-header h3 {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.modal-close-btn {
+  border: none;
+  background: transparent;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--text-soft);
+  transition: color var(--transition-fast);
+}
+
+.modal-close-btn:hover {
+  color: var(--primary-orange);
+}
+
+.form-group {
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+}
+
+.form-group label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.form-group input, .form-group select {
+  width: 100%;
+  height: 40px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--surface-subtle);
+  color: var(--text-main);
+  font-size: 14px;
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+
+.form-group input:focus, .form-group select:focus {
+  border-color: var(--primary-orange);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  border-top: 1px solid var(--border-color);
+  padding-top: 16px;
+  margin-top: 16px;
+}
+
+/* Whisper Message Styling (Sticky Note) */
+.message.whisper {
+  background: #FEF08A !important; /* light yellow bg */
+  color: #854D0E !important; /* dark yellow-brown text */
+  border: 1px dashed #FACC15 !important;
+  border-radius: 8px !important;
+  margin: 8px auto 8px 16px !important;
+  max-width: 80% !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05) !important;
+}
+
+.message.whisper .message-text {
+  font-style: italic !important;
+}
+
+.message.whisper::before {
+  content: "\ea1d"; /* lock icon from remixicon */
+  font-family: 'remixicon' !important;
+  margin-right: 6px;
+  font-style: normal;
+  font-size: 14px;
+}
+
+/* Hide admin features by default */
+.admin-only {
+  display: none !important;
+}
+
+body.admin-role .admin-only {
+  display: flex !important;
+}
+

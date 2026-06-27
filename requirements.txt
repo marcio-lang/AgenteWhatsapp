@@ -6,3 +6,6 @@ prometheus-client
 rq
 redis
 psycopg2-binary
+flask-socketio
+pyjwt
+bcrypt
