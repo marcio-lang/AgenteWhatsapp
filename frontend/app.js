@@ -1348,10 +1348,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const state = data.instance ? data.instance.state : 'disconnected';
             const name = data.instance_name || 'Desconhecida';
 
-            instanceDisplayName.textContent = name;
-            const indicator = instanceStatusBadge.querySelector('.status-indicator');
-            indicator.className = 'status-indicator ' + (state === 'open' ? 'online' : (state === 'connecting' ? 'away' : 'offline'));
-            instanceStatusBadge.title = `Estado: ${state}`;
+            if (instanceDisplayName) instanceDisplayName.textContent = name;
+            if (instanceStatusBadge) {
+                const indicator = instanceStatusBadge.querySelector('.status-indicator');
+                if (indicator) {
+                    indicator.className = 'status-indicator ' + (state === 'open' ? 'online' : (state === 'connecting' ? 'away' : 'offline'));
+                }
+                instanceStatusBadge.title = `Estado: ${state}`;
+            }
         } catch (e) {
             console.error('Error fetching instance status', e);
         }

@@ -437,6 +437,27 @@ def api_connect_instance(current_user, name):
     local_client = EvolutionClient()
     local_client.instance_name = name
     
+    # Self-healing: Check if instance exists in Evolution API, recreate if missing
+    try:
+        url_list = f"{local_client.base_url}/instance/fetchInstances"
+        resp_list = local_client.session.get(url_list, headers=local_client.headers, timeout=10)
+        if resp_list.status_code == 200:
+            instances = resp_list.json()
+            names = [x.get('instanceName') or x.get('name') for x in instances] if isinstance(instances, list) else []
+            if name not in names:
+                print(f"Self-healing: Recreating instance {name} in Evolution API...")
+                token = inst.get('token') or ""
+                res_create = local_client.create_evolution_instance(name, token)
+                returned_token = ((res_create.get('instance') or {}).get('token') or res_create.get('hash') or {}).get('token') or token
+                if returned_token and returned_token != inst.get('token'):
+                    update_instance_token(inst['id'], returned_token)
+                
+                # Register webhook
+                webhook_url = f"http://{request.host}/webhook"
+                local_client.set_evolution_webhook(name, webhook_url)
+    except Exception as e:
+        print(f"Error in self-healing check: {e}")
+        
     try:
         url = f"{local_client.base_url}/instance/connect/{name}"
         response = local_client.session.get(url, headers=local_client.headers, timeout=15)
