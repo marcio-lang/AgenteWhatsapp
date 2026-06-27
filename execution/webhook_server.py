@@ -362,11 +362,21 @@ def api_list_instances(current_user):
         local_client.instance_name = inst['name']
         try:
             status = local_client.get_instance_status()
-            state = (status.get('instance') or {}).get('state', 'close')
+            instance_data = status.get('instance') or {}
+            state = instance_data.get('state', 'close')
             update_instance_status(inst['name'], state)
             inst['status'] = state
+            
+            # Populate the connection JID/phone number
+            owner_jid = instance_data.get('ownerJid') or instance_data.get('number')
+            if owner_jid:
+                clean_num = owner_jid.split('@')[0]
+                inst['connection_jid'] = f"+{clean_num}"
+            else:
+                inst['connection_jid'] = None
         except Exception:
             inst['status'] = 'close'
+            inst['connection_jid'] = None
     return jsonify(instances), 200
 
 @app.route('/api/admin/instances', methods=['POST'])
