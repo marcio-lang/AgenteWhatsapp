@@ -354,7 +354,6 @@ class EvolutionClient:
         payload = {
             "instanceName": name,
             "token": token or "",
-            "number": "",
             "qrcode": True,
             "integration": "WHATSAPP-BAILEYS"
         }
