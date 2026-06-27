@@ -3916,7 +3916,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         fetchAdminInstances();
                         return;
                     }
-                    const qr = data.code || data.base64 || (data.qrcode ? (data.qrcode.code || data.qrcode.base64 || data.qrcode) : null);
+                    let qr = data.base64 || (data.qrcode && data.qrcode.base64) || data.code || (data.qrcode ? (data.qrcode.code || data.qrcode) : null);
+                    if (qr && typeof qr === 'string') {
+                        if (!qr.startsWith('data:image/') && !qr.startsWith('http') && /^[a-zA-Z0-9+/=]+$/.test(qr.replace(/[\s\r\n]+/g, ''))) {
+                            qr = `data:image/png;base64,${qr}`;
+                        }
+                    }
                     if (qr) {
                         qrContainer.innerHTML = `<img src="${qr}" style="width: 220px; height: 220px; object-fit: contain;">`;
                         document.getElementById('connect-status-text').innerText = 'Status: Aguardando leitura...';
