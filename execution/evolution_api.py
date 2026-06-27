@@ -348,7 +348,7 @@ class EvolutionClient:
             log_message(f"Error sending presence to {jid}: {e}")
             return None
 
-    def create_evolution_instance(self, name, token=None):
+    def create_evolution_instance(self, name, token=None, number=None):
         """Creates a WhatsApp instance in Evolution API."""
         url = f"{self.base_url}/instance/create"
         payload = {
@@ -357,6 +357,8 @@ class EvolutionClient:
             "qrcode": True,
             "integration": "WHATSAPP-BAILEYS"
         }
+        if number:
+            payload["number"] = number
         try:
             response = self.session.post(url, json=payload, headers=self.headers, timeout=20)
             return response.json()

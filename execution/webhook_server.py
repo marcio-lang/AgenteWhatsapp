@@ -376,6 +376,7 @@ def api_create_instance(current_user):
     data = request.get_json() or {}
     name = data.get('name')
     token = data.get('token')
+    number = data.get('number')
     
     if not name:
         return jsonify({'error': 'Nome da instância é obrigatório'}), 400
@@ -388,7 +389,7 @@ def api_create_instance(current_user):
         return jsonify({'error': 'Instância já cadastrada'}), 409
         
     local_client = EvolutionClient()
-    res = local_client.create_evolution_instance(name, token)
+    res = local_client.create_evolution_instance(name, token, number)
     
     if 'hash' not in res and 'instance' not in res and res.get('status') == 'error':
         return jsonify({'error': f"Erro na Evolution API: {res.get('message')}"}), 500

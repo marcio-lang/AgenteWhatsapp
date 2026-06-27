@@ -3983,6 +3983,8 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             const name = document.getElementById('inst-name').value.trim();
             const token = document.getElementById('inst-token').value.trim();
+            const numEl = document.getElementById('inst-number');
+            const number = numEl ? numEl.value.trim() : '';
             const errorDiv = document.getElementById('create-instance-error');
             errorDiv.style.display = 'none';
 
@@ -3990,7 +3992,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const resp = await fetch('/api/admin/instances', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name, token })
+                    body: JSON.stringify({ name, token, number })
                 });
                 if (resp.ok) {
                     document.getElementById('modal-create-instance').style.display = 'none';
