@@ -1412,13 +1412,32 @@ def _is_valid_jid(jid):
 
 @app.route('/api/instance/status', methods=['GET'])
 def api_instance_status():
-    # fetch_instance_details uses the 'fetchInstances' endpoint,
-    # which is more reliable than 'connectionStatus' for overall state.
-    details = client.fetch_instance_details()
+    instance_id = request.args.get('instance_id')
+    instance_name = request.args.get('instance_name')
     
-    # Initialize basic status
+    selected_name = None
+    if instance_id and instance_id != 'all':
+        inst = get_instance_by_id(int(instance_id))
+        if inst:
+            selected_name = inst['name']
+    elif instance_name:
+        selected_name = instance_name
+        
+    if not selected_name:
+        all_inst = get_all_instances()
+        if all_inst:
+            selected_name = all_inst[0]['name']
+            
+    if not selected_name:
+        selected_name = client.instance_name
+        
+    local_client = EvolutionClient()
+    local_client.instance_name = selected_name
+    
+    details = local_client.fetch_instance_details()
+    
     status = {
-        "instance_name": client.instance_name,
+        "instance_name": selected_name,
         "instance": {
             "state": "disconnected",
             "ownerJid": "Não disponível"
@@ -1426,22 +1445,19 @@ def api_instance_status():
     }
     
     if details and isinstance(details, dict):
-        # Extract state: 'open' is what the frontend expects for 'online'
         state = details.get('state') or details.get('connectionStatus')
         if not state and details.get('status') == 'connected':
             state = 'open'
         
         status['instance']['state'] = state or 'disconnected'
         status['instance']['ownerJid'] = details.get('ownerJid') or details.get('number') or "Não disponível"
-        
-        # Merge any other useful fields
         for key in ['name', 'status', 'token', 'connectionStatus']:
             if key in details:
                 status['instance'][key] = details[key]
     elif details and isinstance(details, list):
         chosen = None
         for inst in details:
-            if inst.get('name') == client.instance_name:
+            if inst.get('name') == selected_name:
                 chosen = inst
                 break
         if chosen is None and len(details) > 0:

@@ -1336,7 +1336,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- STATUS LOGIC ---
     async function fetchInstanceStatus() {
         try {
-            const resp = await fetch('/api/instance/status');
+            const instanceSelect = document.getElementById('filter-instance-select');
+            const selectedInstance = instanceSelect ? instanceSelect.value : 'all';
+            
+            let url = '/api/instance/status';
+            if (selectedInstance && selectedInstance !== 'all') {
+                url = `/api/instance/status?instance_id=${selectedInstance}`;
+            }
+            const resp = await fetch(url);
             const data = await resp.json();
             const state = data.instance ? data.instance.state : 'disconnected';
             const name = data.instance_name || 'Desconhecida';
@@ -3693,6 +3700,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (filterInstanceSelect) {
         filterInstanceSelect.onchange = () => {
             fetchChats();
+            fetchInstanceStatus();
         };
     }
 
@@ -3894,18 +3902,19 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const loadQR = async () => {
             try {
-                const resp = await fetch(`/api/admin/instances/${id}/qrcode`);
+                const resp = await fetch(`/api/admin/instances/${name}/connect`);
                 if (resp.ok) {
                     const data = await resp.json();
-                    if (data.status === 'connected' || data.status === 'open') {
+                    if (data.status === 'connected' || data.status === 'open' || data.instance?.state === 'open' || data.instance?.state === 'connected') {
                         qrContainer.innerHTML = '<div style="color: #22C55E; font-weight: 700;"><i class="ri-checkbox-circle-line" style="font-size: 48px;"></i><br>WhatsApp Conectado!</div>';
                         document.getElementById('connect-status-text').innerText = 'Status: Conectado';
                         clearInterval(qrInterval);
                         fetchAdminInstances();
                         return;
                     }
-                    if (data.qrcode) {
-                        qrContainer.innerHTML = `<img src="${data.qrcode}" style="width: 220px; height: 220px; object-fit: contain;">`;
+                    const qr = data.code || data.base64 || (data.qrcode ? (data.qrcode.code || data.qrcode.base64 || data.qrcode) : null);
+                    if (qr) {
+                        qrContainer.innerHTML = `<img src="${qr}" style="width: 220px; height: 220px; object-fit: contain;">`;
                         document.getElementById('connect-status-text').innerText = 'Status: Aguardando leitura...';
                     }
                 }
