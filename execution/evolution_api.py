@@ -325,7 +325,7 @@ class EvolutionClient:
 
     def fetch_profile_picture(self, jid):
         """Fetches the profile picture URL for a specific JID."""
-        url = f"{self.base_url}/chat/fetchProfilePicture/{self.instance_name}"
+        url = f"{self.base_url}/chat/fetchProfilePictureUrl/{self.instance_name}"
         payload = {"number": jid}
         try:
             response = self.session.post(url, json=payload, headers=self.headers, timeout=10)

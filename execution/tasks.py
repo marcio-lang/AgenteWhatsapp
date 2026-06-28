@@ -102,6 +102,20 @@ def process_message_task(target_number, message_content, instance_id=None):
             if inst_details and inst_details.get("name"):
                 local_client.instance_name = inst_details["name"]
 
+        # Asynchronously fetch and update contact profile picture if not already present
+        try:
+            contacts = get_all_contacts_from_db()
+            contact = next((c for c in contacts if c.get('jid') == target_number), None)
+            if not contact or not contact.get("profile_pic"):
+                log_message(f"[Worker] Profile picture missing for {target_number}, fetching from Evolution...")
+                res_pic = local_client.fetch_profile_picture(target_number)
+                if isinstance(res_pic, dict) and (res_pic.get("profilePictureUrl") or res_pic.get("url")):
+                    pic_url = res_pic.get("profilePictureUrl") or res_pic.get("url")
+                    log_message(f"[Worker] Found profile pic for {target_number}: {pic_url}")
+                    update_contact(target_number, profile_pic=pic_url)
+        except Exception as pic_err:
+            log_message(f"[Worker] Error updating profile picture: {pic_err}")
+
         flow_id = _ensure_default_flow()
         rules = list_flow_rules(flow_id) if flow_id else []
         rule = _pick_rule(rules, message_content)
