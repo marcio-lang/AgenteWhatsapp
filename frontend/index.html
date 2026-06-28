@@ -933,6 +933,12 @@
         </div>
     </div>
 
+    <!-- Modal de Visualização de Imagem (Zoom) -->
+    <div id="image-modal" class="modal-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(8px); justify-content: center; align-items: center; z-index: 10000; cursor: pointer;">
+        <span class="modal-close" style="position: absolute; top: 24px; right: 32px; color: #f8fafc; font-size: 40px; font-weight: bold; cursor: pointer; transition: 0.3s; z-index: 10100;">&times;</span>
+        <img class="modal-content" id="modal-image" style="margin: auto; display: block; max-width: 90%; max-height: 90%; object-fit: contain; border-radius: 8px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); cursor: default;">
+    </div>
+
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script src="app.js"></script>
 </body>

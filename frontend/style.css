@@ -1459,6 +1459,7 @@ h1 {
 
 .message-body {
   word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .message-meta {

@@ -2055,6 +2055,28 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function formatMessageText(text) {
+        if (!text) return '';
+        // 1. Escape HTML to prevent XSS
+        let escaped = text
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+            
+        // 2. Format *bold*
+        escaped = escaped.replace(/\*(.*?)\*/g, '<strong>$1</strong>');
+        // 3. Format _italic_
+        escaped = escaped.replace(/_(.*?)_/g, '<em>$1</em>');
+        // 4. Format ~strike~
+        escaped = escaped.replace(/~(.*?)~/g, '<del>$1</del>');
+        // 5. Format monospace `code`
+        escaped = escaped.replace(/`(.*?)`/g, '<code style="background: rgba(15,23,42,0.08); padding: 2px 4px; border-radius: 4px; font-family: monospace; font-size: 13px;">$1</code>');
+        
+        return escaped;
+    }
+
     function renderMessages() {
         messagesContainer.innerHTML = '';
         const activeChat = chats.find(chat => chat.jid === activeChatJid);
@@ -2129,7 +2151,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 link.className = 'message-document-link';
                 wrapper.appendChild(link);
             } else {
-                wrapper.textContent = msg.content || '';
+                wrapper.innerHTML = formatMessageText(msg.content || '');
             }
 
             const meta = document.createElement('div');
