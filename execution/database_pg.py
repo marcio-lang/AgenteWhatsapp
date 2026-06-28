@@ -337,10 +337,11 @@ def get_chat_history(jid, limit=50):
     cursor = conn.cursor(cursor_factory=RealDictCursor)
     try:
         cursor.execute('''
-        SELECT * FROM messages WHERE jid = %s ORDER BY timestamp ASC LIMIT %s
+        SELECT * FROM messages WHERE jid = %s ORDER BY timestamp DESC LIMIT %s
         ''', (jid, limit))
         rows = cursor.fetchall()
         result = [_coerce_message_row(row) for row in rows]
+        result.reverse() # Reorder to chronological (oldest to newest)
         return convert_dates(result)
     except Exception as e:
         print(f"Erro get_chat_history: {e}")

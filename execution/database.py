@@ -280,11 +280,13 @@ def get_chat_history(jid, limit=50):
     conn = get_db()
     cursor = conn.cursor()
     cursor.execute('''
-    SELECT * FROM messages WHERE jid = ? ORDER BY timestamp ASC LIMIT ?
+    SELECT * FROM messages WHERE jid = ? ORDER BY timestamp DESC LIMIT ?
     ''', (jid, limit))
     rows = cursor.fetchall()
     conn.close()
-    return [_coerce_message_row(row) for row in rows]
+    result = [_coerce_message_row(row) for row in rows]
+    result.reverse() # Reorder to chronological (oldest to newest)
+    return result
 
 def get_message_by_id(msg_id):
     conn = get_db()
