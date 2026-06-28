@@ -5,6 +5,7 @@ from utils import get_offer_files
 from constants import *
 from logger import log_message
 
+USE_POSTGRES = os.getenv("USE_POSTGRES", "0") == "1"
 if USE_POSTGRES:
     from database_pg import *
 else:
