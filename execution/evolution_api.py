@@ -398,7 +398,28 @@ class EvolutionClient:
                 "CHATS_UPSERT",
                 "CHATS_UPDATE",
                 "CONNECTION_UPDATE"
-            ]
+            ],
+            "webhook": {
+                "enabled": True,
+                "url": webhook_url,
+                "byEvents": False,
+                "events": [
+                    "APPLICATION_STARTUP",
+                    "QRCODE_UPDATED",
+                    "MESSAGES_SET",
+                    "MESSAGES_UPSERT",
+                    "MESSAGES_UPDATE",
+                    "SEND_MESSAGE",
+                    "CONTACTS_SET",
+                    "CONTACTS_UPSERT",
+                    "CONTACTS_UPDATE",
+                    "PRESENCE_UPDATE",
+                    "CHATS_SET",
+                    "CHATS_UPSERT",
+                    "CHATS_UPDATE",
+                    "CONNECTION_UPDATE"
+                ]
+            }
         }
         try:
             response = self.session.post(url, json=payload, headers=self.headers, timeout=15)

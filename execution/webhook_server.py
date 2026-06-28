@@ -361,18 +361,30 @@ def api_list_instances(current_user):
     for inst in instances:
         local_client.instance_name = inst['name']
         try:
-            status = local_client.get_instance_status()
-            instance_data = status.get('instance') or {}
-            state = instance_data.get('state', 'close')
-            update_instance_status(inst['name'], state)
-            inst['status'] = state
-            
-            # Populate the connection JID/phone number
-            owner_jid = instance_data.get('ownerJid') or instance_data.get('number')
-            if owner_jid:
-                clean_num = owner_jid.split('@')[0]
-                inst['connection_jid'] = f"+{clean_num}"
+            details = local_client.fetch_instance_details()
+            if details and isinstance(details, dict):
+                # Retrieve state
+                state = details.get('connectionStatus') or details.get('state') or 'close'
+                if not state and details.get('status') == 'connected':
+                    state = 'open'
+                
+                update_instance_status(inst['name'], state)
+                inst['status'] = state
+                
+                # Retrieve connected phone number/JID
+                owner_jid = details.get('ownerJid') or details.get('number')
+                if owner_jid:
+                    clean_num = owner_jid.split('@')[0]
+                    inst['connection_jid'] = f"+{clean_num}"
+                else:
+                    inst['connection_jid'] = None
             else:
+                # Fallback to get_instance_status
+                status = local_client.get_instance_status()
+                instance_data = status.get('instance') or {}
+                state = instance_data.get('state', 'close')
+                update_instance_status(inst['name'], state)
+                inst['status'] = state
                 inst['connection_jid'] = None
         except Exception:
             inst['status'] = 'close'
@@ -469,6 +481,14 @@ def api_connect_instance(current_user, name):
     except Exception as e:
         print(f"Error in self-healing check: {e}")
         
+    # Always guarantee the webhook is set up for this instance
+    try:
+        webhook_url = f"http://{request.host}/webhook"
+        print(f"Ensuring webhook is registered for {name} pointing to {webhook_url}...")
+        local_client.set_evolution_webhook(name, webhook_url)
+    except Exception as ew:
+        print(f"Error registering webhook in connect: {ew}")
+
     try:
         url = f"{local_client.base_url}/instance/connect/{name}"
         response = local_client.session.get(url, headers=local_client.headers, timeout=15)
